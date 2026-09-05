@@ -23,12 +23,27 @@ spring:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
+  # Mail config (set to true to enable real SMTP; false = log credentials to console)
+  mail:
+    enabled: false
+    host: smtp.gmail.com
+    port: 587
+    username: mdsadiqueamin721786@gmail.com
+    password: ynexabiawpytajrq
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
 
 jwt:
   secret: "DealFlow360SuperUltraSecretEnterpriseKeyForJwtSigning2026SecureMustBe256BitsLong!"
   expirationMs: 86400000 # 24 hours
 
 dealflow:
+  # Default admin credentials — seeded automatically on first startup
+  admin:
+    name: "Hussain"
+    email: "hvali486@gmail.com"
+    password: "Hussain@6305"
   risk:
     manager-threshold: 10.0
     finance-threshold: 15.0
@@ -50,3 +65,4 @@ logging:
   level:
     com.dealflow360: INFO
     org.springframework.security: WARN
+

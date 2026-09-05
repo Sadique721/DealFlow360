@@ -4,6 +4,7 @@ import com.dealflow360.auth.AuthUserService;
 import com.dealflow360.auth.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -26,7 +27,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity
+@EnableMethodSecurity   // enables @PreAuthorize on controllers
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
@@ -58,27 +59,50 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers(
-                                "/api/auth/**",
-                                "/api/portal/**",
-                                "/ws/**",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
-                        // Admin restricted endpoints
-                        .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SALES_MANAGER")
-                        // All other APIs require authentication
-                        .requestMatchers("/api/**").authenticated()
-                        .anyRequest().permitAll()
-                )
-                .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+
+                // ── PUBLIC ENDPOINTS ─────────────────────────────────────────
+                .requestMatchers(
+                    "/api/auth/login",
+                    "/api/auth/signup",
+                    "/api/portal/**",
+                    "/ws/**",
+                    "/v3/api-docs/**",
+                    "/swagger-ui/**",
+                    "/swagger-ui.html"
+                ).permitAll()
+
+                // ── ADMIN-ONLY ENDPOINTS ─────────────────────────────────────
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+
+                // ── APPROVAL ACTIONS: MANAGER + FINANCE + ADMIN ──────────────
+                // Fine-grained control handled by @PreAuthorize in the controller
+                // This is a secondary defense layer
+                .requestMatchers(HttpMethod.POST, "/api/approvals/act").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE")
+
+                // ── INVOICE ENDPOINTS: FINANCE + ADMIN ───────────────────────
+                .requestMatchers("/api/invoices/**").hasAnyRole("ADMIN", "FINANCE")
+
+                // ── WAREHOUSE ENDPOINTS: FINANCE + MANAGER + ADMIN ───────────
+                .requestMatchers("/api/warehouses/**").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE")
+                .requestMatchers("/api/fulfillment/**").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE", "SALES_REP")
+
+                // ── CURRENT USER PROFILE ─────────────────────────────────────
+                .requestMatchers("/api/auth/me").authenticated()
+
+                // ── LIST USERS: ADMIN ONLY (fine-grained in controller too) ──
+                .requestMatchers("/api/auth/users").hasRole("ADMIN")
+
+                // ── ALL OTHER /api/** REQUIRE AUTHENTICATION ─────────────────
+                .requestMatchers("/api/**").authenticated()
+
+                .anyRequest().permitAll()
+            )
+            .authenticationProvider(authenticationProvider())
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -43,50 +44,36 @@ public class AuthController {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
         );
-
         AuthUser authUser = (AuthUser) authentication.getPrincipal();
         User user = authUser.getUser();
         String token = tokenProvider.generateToken(user);
-
         return ResponseEntity.ok(LoginResponse.builder()
-                .token(token)
-                .type("Bearer")
-                .id(user.getId())
-                .name(user.getName())
-                .email(user.getEmail())
-                .role(user.getRole())
-                .team(user.getTeam())
+                .token(token).type("Bearer")
+                .id(user.getId()).name(user.getName())
+                .email(user.getEmail()).role(user.getRole()).team(user.getTeam())
                 .build());
     }
 
     @PostMapping("/signup")
-    @Operation(summary = "Register a new user (default SALES_REP)")
+    @Operation(summary = "Customer self-registration — always creates a CUSTOMER role account")
     public ResponseEntity<?> signup(@Valid @RequestBody SignupRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email is already in use"));
         }
-
         User user = User.builder()
                 .name(request.getName())
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .role(request.getRole() != null ? request.getRole() : "SALES_REP")
-                .team(request.getTeam() != null ? request.getTeam() : "Global Sales")
+                .role("CUSTOMER")
+                .team(request.getTeam() != null ? request.getTeam() : "External")
                 .active(true)
                 .build();
-
         userRepository.save(user);
-
         String token = tokenProvider.generateToken(user);
-
         return ResponseEntity.ok(LoginResponse.builder()
-                .token(token)
-                .type("Bearer")
-                .id(user.getId())
-                .name(user.getName())
-                .email(user.getEmail())
-                .role(user.getRole())
-                .team(user.getTeam())
+                .token(token).type("Bearer")
+                .id(user.getId()).name(user.getName())
+                .email(user.getEmail()).role(user.getRole()).team(user.getTeam())
                 .build());
     }
 
@@ -98,16 +85,14 @@ public class AuthController {
         }
         User user = authUser.getUser();
         return ResponseEntity.ok(Map.of(
-                "id", user.getId(),
-                "name", user.getName(),
-                "email", user.getEmail(),
-                "role", user.getRole(),
-                "team", user.getTeam()
+                "id", user.getId(), "name", user.getName(),
+                "email", user.getEmail(), "role", user.getRole(), "team", user.getTeam()
         ));
     }
 
     @GetMapping("/users")
-    @Operation(summary = "List users by role or all internal users")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "List users by role — ADMIN only (full CRUD: /api/admin/users)")
     public ResponseEntity<List<User>> listUsers(@RequestParam(required = false) String role) {
         if (role != null && !role.isBlank()) {
             return ResponseEntity.ok(userRepository.findByRole(role));

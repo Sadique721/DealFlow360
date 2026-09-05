@@ -58,5 +58,5 @@ public class AuthUser implements UserDetails {
     public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() { return user.getActive() != null && user.getActive(); }
+    public boolean isEnabled() { return user.getActive() == null || Boolean.TRUE.equals(user.getActive()); }
 }
