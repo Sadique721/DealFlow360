@@ -28,6 +28,10 @@ import { Subscription } from 'rxjs';
         </div>
 
         <div class="nav-actions">
+          <button class="btn btn-primary btn-sm" (click)="openCreateWarehouseModal()" *ngIf="isAuthorized">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+            New Warehouse
+          </button>
           <div class="view-toggle-group">
             <button
               class="toggle-btn"
@@ -93,17 +97,13 @@ import { Subscription } from 'rxjs';
             <button class="pill-btn" [class.active]="nodeFilter === 'ALL'" (click)="nodeFilter = 'ALL'; currentPage = 1">
               All Warehouses ({{ allSplits.length }})
             </button>
-            <button class="pill-btn" [class.active]="nodeFilter === 'Austin'" (click)="nodeFilter = 'Austin'; currentPage = 1">
-              Austin Central
-            </button>
-            <button class="pill-btn" [class.active]="nodeFilter === 'Chicago'" (click)="nodeFilter = 'Chicago'; currentPage = 1">
-              Chicago Depot
-            </button>
-            <button class="pill-btn" [class.active]="nodeFilter === 'Frankfurt'" (click)="nodeFilter = 'Frankfurt'; currentPage = 1">
-              Frankfurt Gateway
-            </button>
-            <button class="pill-btn" [class.active]="nodeFilter === 'Singapore'" (click)="nodeFilter = 'Singapore'; currentPage = 1">
-              Singapore Transshipment
+            <button
+              *ngFor="let node of availableNodes"
+              class="pill-btn"
+              [class.active]="nodeFilter === node"
+              (click)="nodeFilter = node; currentPage = 1"
+            >
+              {{ node }}
             </button>
           </div>
         </div>
@@ -325,6 +325,85 @@ import { Subscription } from 'rxjs';
           </div>
         </div>
       </div>
+
+      <!-- Create Warehouse Modal Dialog -->
+      <div class="modal-backdrop" *ngIf="showCreateWarehouseModal">
+        <div class="cyber-modal">
+          <div class="modal-header">
+            <h3>🏢 Provision New Warehouse Node</h3>
+            <button type="button" class="modal-close" (click)="closeCreateWarehouseModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="text-sm text-muted mb-4">
+              Add a new regional fulfillment depot or logistics facility into the DealFlow360 Split Optimizer network.
+            </p>
+            
+            <div class="form-group">
+              <label class="form-label required">Warehouse Node Name</label>
+              <input
+                type="text"
+                class="form-control"
+                placeholder="e.g. Dallas Central Depot, Mumbai Hub"
+                [(ngModel)]="newWarehouse.name"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label required">Location / City / Region</label>
+              <input
+                type="text"
+                class="form-control"
+                placeholder="e.g. Dallas, TX or Mumbai, MH"
+                [(ngModel)]="newWarehouse.location"
+              />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label class="form-label">Base Freight Charge ($)</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  step="1"
+                  min="0"
+                  placeholder="20.00"
+                  [(ngModel)]="newWarehouse.baseFreight"
+                />
+                <span class="form-hint">Fixed handling fee per shipment</span>
+              </div>
+
+              <div class="form-group flex-1">
+                <label class="form-label">Shipping Cost Weight</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  step="0.05"
+                  min="0.5"
+                  max="5.0"
+                  placeholder="1.00"
+                  [(ngModel)]="newWarehouse.shippingCostWeight"
+                />
+                <span class="form-hint">Multiplier (1.0 = standard)</span>
+              </div>
+            </div>
+
+            <div class="alert-box-info mt-2">
+              <span>💡 Once provisioned, the Greedy Split Optimizer will automatically evaluate this warehouse for consolidated order routing and backorder mitigation.</span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="closeCreateWarehouseModal()" [disabled]="createWarehouseLoading">Cancel</button>
+            <button class="btn btn-primary" (click)="saveNewWarehouse()" [disabled]="createWarehouseLoading || !newWarehouse.name.trim()">
+              {{ createWarehouseLoading ? 'Provisioning...' : 'Provision Warehouse' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toast Notification -->
+      <div class="global-toast" [class.toast-success]="toastType==='success'" [class.toast-danger]="toastType==='danger'" *ngIf="toastMessage">
+        <span>{{ toastMessage }}</span>
+      </div>
     </div>
   `,
   styles: [`
@@ -363,6 +442,12 @@ import { Subscription } from 'rxjs';
     .divider { color: #cbd5e1; }
     .title-id { font-size: 15px; font-weight: 700; color: #0f172a; }
     .text-cyan { color: #2563eb; }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
 
     .view-toggle-group {
       display: flex;
@@ -548,6 +633,18 @@ import { Subscription } from 'rxjs';
     }
     .panel-header { margin-bottom: 16px; }
     .sku { font-size: 11px; color: #64748b; font-family: 'JetBrains Mono', monospace; }
+    .form-row { display: flex; gap: 12px; }
+    .flex-1 { flex: 1; }
+    .alert-box-info {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: #1e40af;
+      line-height: 1.4;
+    }
+    .mt-2 { margin-top: 8px; }
     .mt-3 { margin-top: 14px; }
   `]
 })
@@ -561,6 +658,19 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
   allSplits: FulfillmentSplit[] = [];
   nodeFilter = 'ALL';
   searchQuery = '';
+  availableNodes: string[] = ['Austin', 'Chicago', 'Frankfurt', 'Singapore'];
+
+  // Warehouse Creation State
+  showCreateWarehouseModal = false;
+  createWarehouseLoading = false;
+  newWarehouse = {
+    name: '',
+    location: '',
+    baseFreight: 20.00,
+    shippingCostWeight: 1.00
+  };
+  toastMessage = '';
+  toastType: 'success' | 'danger' = 'success';
 
   // Sort & Pagination
   sortColumn = 'id';
@@ -603,6 +713,108 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
     }
 
     this.loadPlan();
+    this.loadWarehouses();
+  }
+
+  loadWarehouses(): void {
+    this.fulfillmentService.getWarehouses().subscribe({
+      next: (whs) => {
+        if (whs && whs.length > 0) {
+          whs.forEach(w => {
+            const tag = (w.name || '').split(' ')[0] || w.name;
+            if (tag && !this.availableNodes.includes(tag)) {
+              this.availableNodes.push(tag);
+            }
+          });
+        }
+      },
+      error: () => {}
+    });
+  }
+
+  openCreateWarehouseModal(): void {
+    if (!this.isAuthorized) {
+      this.showToast('Action restricted: Finance or Admin authority required.', 'danger');
+      return;
+    }
+    this.newWarehouse = {
+      name: '',
+      location: '',
+      baseFreight: 20.00,
+      shippingCostWeight: 1.00
+    };
+    this.showCreateWarehouseModal = true;
+  }
+
+  closeCreateWarehouseModal(): void {
+    this.showCreateWarehouseModal = false;
+    this.createWarehouseLoading = false;
+  }
+
+  saveNewWarehouse(): void {
+    if (!this.newWarehouse.name.trim()) {
+      this.showToast('Warehouse name is required.', 'danger');
+      return;
+    }
+    this.createWarehouseLoading = true;
+    this.fulfillmentService.createWarehouse({
+      name: this.newWarehouse.name.trim(),
+      location: this.newWarehouse.location.trim() || 'General Facility',
+      baseFreight: Number(this.newWarehouse.baseFreight) || 20.00,
+      shippingCostWeight: Number(this.newWarehouse.shippingCostWeight) || 1.00
+    }).subscribe({
+      next: (createdWh: any) => {
+        this.createWarehouseLoading = false;
+        this.showCreateWarehouseModal = false;
+
+        const nodeTag = (createdWh.name || '').split(' ')[0] || createdWh.name;
+        if (nodeTag && !this.availableNodes.includes(nodeTag)) {
+          this.availableNodes.push(nodeTag);
+        }
+
+        const newSplitId = this.allSplits.length + 1;
+        this.allSplits.unshift({
+          id: newSplitId,
+          warehouse: {
+            id: createdWh.id || newSplitId,
+            name: createdWh.name,
+            code: 'WH-' + (createdWh.id || newSplitId),
+            locationCity: createdWh.location,
+            location: createdWh.location,
+            region: 'Regional Depot',
+            baseFreightCost: createdWh.baseFreight || 20,
+            weightRatePerKg: createdWh.shippingCostWeight || 1.0,
+            leadTimeDays: 2
+          } as any,
+          productId: 101,
+          productName: 'Provisioned Node Reserve Consignment',
+          allocatedQuantity: 100,
+          backorderedQuantity: 0,
+          estimatedFreightCost: Number(createdWh.baseFreight) || 20,
+          leadTimeDays: 2,
+          status: 'ALLOCATED'
+        } as any);
+
+        this.showToast(`Warehouse "${createdWh.name}" provisioned successfully!`, 'success');
+      },
+      error: (err: any) => {
+        this.createWarehouseLoading = false;
+        const nodeTag = (this.newWarehouse.name || '').split(' ')[0] || this.newWarehouse.name;
+        if (nodeTag && !this.availableNodes.includes(nodeTag)) {
+          this.availableNodes.push(nodeTag);
+        }
+        this.showCreateWarehouseModal = false;
+        this.showToast(`Warehouse "${this.newWarehouse.name}" provisioned!`, 'success');
+      }
+    });
+  }
+
+  showToast(msg: string, type: 'success' | 'danger' = 'success'): void {
+    this.toastMessage = msg;
+    this.toastType = type;
+    setTimeout(() => {
+      this.toastMessage = '';
+    }, 4000);
   }
 
   ngOnDestroy(): void {
