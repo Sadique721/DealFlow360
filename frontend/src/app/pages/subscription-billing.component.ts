@@ -3,8 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { AuthService } from '../services/auth.service';
+import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionContract, Quotation } from '../models/dealflow.model';
-import { generate120Subscriptions, generate120Quotations } from '../services/mock-data';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -593,11 +593,13 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
 
   private subs = new Subscription();
 
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private subscriptionService: SubscriptionService
+  ) {}
 
   ngOnInit(): void {
-    const quotes = generate120Quotations();
-    this.allContracts = generate120Subscriptions(quotes);
+    this.allContracts = [];
 
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
@@ -611,7 +613,44 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
       })
     );
 
+    this.loadSubscriptions();
     this.calculateProration();
+  }
+
+  loadSubscriptions(): void {
+    this.subscriptionService.getSubscriptions().subscribe({
+      next: (subs: any[]) => {
+        if (subs && subs.length > 0) {
+          this.allContracts = subs.map(s => {
+            const customerName = s.customer?.name || 'Enterprise Customer';
+            const tierStr = typeof s.customer?.tier === 'string' ? s.customer.tier : (s.customer?.tier?.tierName || 'Standard');
+            const qty = s.quantity || 1;
+            const amt = Number(s.amount) || 150;
+            return {
+              id: s.id,
+              contractNumber: `SUB-${s.id}-${customerName.substring(0, 4).toUpperCase()}`,
+              customerName: customerName,
+              customerTier: tierStr,
+              planName: s.planName || 'Cloud Enterprise SLA',
+              billingFrequency: (s.cycle || 'MONTHLY') as any,
+              seatsCount: qty,
+              unitSeatPrice: Number((amt / qty).toFixed(2)),
+              monthlyRecurringRevenue: amt,
+              annualContractValue: amt * 12,
+              startDate: s.startDate || '2026-01-01',
+              nextRenewalDate: s.nextBillDate || '2026-10-01',
+              status: (s.status || 'ACTIVE') as any,
+              prorationAmountAvailable: 0
+            };
+          });
+        } else {
+          this.allContracts = [];
+        }
+      },
+      error: () => {
+        this.allContracts = [];
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -639,7 +678,7 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
 
   simulateForContract(contract: SubscriptionContract): void {
     this.selectedCustomerName = contract.customerName;
-    this.selectedContractNumber = contract.contractNumber;
+    this.selectedContractNumber = contract.contractNumber || '';
     this.currentSeats = contract.seatsCount;
     this.targetSeats = contract.seatsCount + 10;
     this.seatPrice = contract.unitSeatPrice;
@@ -694,10 +733,10 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
       }
       const q = this.searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
-        c.contractNumber.toLowerCase().includes(q) ||
-        c.customerName.toLowerCase().includes(q) ||
-        c.planName.toLowerCase().includes(q) ||
-        c.billingFrequency.toLowerCase().includes(q);
+        (c.contractNumber && c.contractNumber.toLowerCase().includes(q)) ||
+        (c.customerName && c.customerName.toLowerCase().includes(q)) ||
+        (c.planName && c.planName.toLowerCase().includes(q)) ||
+        (c.billingFrequency && c.billingFrequency.toLowerCase().includes(q));
 
       return matchStatus && matchSearch;
     });

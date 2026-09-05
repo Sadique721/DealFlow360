@@ -67,28 +67,39 @@ public class DataInitializer implements CommandLineRunner {
             }
         );
 
-        // 2. Ensure default demo seed accounts have valid encoded passwords ("password123")
+        // 2. Ensure default demo seed accounts exist and have valid encoded passwords ("password123")
         String defaultSeedPasswordHash = passwordEncoder.encode("password123");
-        String[] seedEmails = {
-            "admin@dealflow360.com",
-            "j.rao@dealflow360.com",
-            "s.patel@dealflow360.com",
-            "m.shah@dealflow360.com",
-            "r.iyer@dealflow360.com",
-            "buyer@acmecorp.com"
-        };
+        java.util.Map<String, String[]> demoUsers = java.util.Map.of(
+            "j.rao@dealflow360.com", new String[]{"Jayant Rao", "SALES_REP", "Enterprise Sales"},
+            "s.patel@dealflow360.com", new String[]{"Sneha Patel", "SALES_REP", "Mid-Market"},
+            "m.shah@dealflow360.com", new String[]{"Mehul Shah", "SALES_MANAGER", "Commercial Leadership"},
+            "r.iyer@dealflow360.com", new String[]{"Radhika Iyer", "FINANCE", "Finance Operations"},
+            "buyer@acmecorp.com", new String[]{"Alex Turner", "CUSTOMER", "Procurement"}
+        );
 
-        for (String email : seedEmails) {
-            if (!email.equalsIgnoreCase(adminEmail)) {
-                userRepository.findByEmail(email).ifPresent(u -> {
+        demoUsers.forEach((email, details) -> {
+            userRepository.findByEmail(email).ifPresentOrElse(
+                u -> {
                     if (!passwordEncoder.matches("password123", u.getPasswordHash())) {
                         u.setPasswordHash(defaultSeedPasswordHash);
-                        u.setActive(true);
-                        userRepository.save(u);
-                        log.info("[DataInitializer] Seed user password repaired: {}", email);
                     }
-                });
-            }
-        }
+                    u.setActive(true);
+                    userRepository.save(u);
+                    log.info("[DataInitializer] Seed user verified: {}", email);
+                },
+                () -> {
+                    User user = User.builder()
+                            .name(details[0])
+                            .email(email)
+                            .passwordHash(defaultSeedPasswordHash)
+                            .role(details[1])
+                            .team(details[2])
+                            .active(true)
+                            .build();
+                    userRepository.save(user);
+                    log.info("[DataInitializer] Demo user provisioned: {} ({})", email, details[1]);
+                }
+            );
+        });
     }
 }

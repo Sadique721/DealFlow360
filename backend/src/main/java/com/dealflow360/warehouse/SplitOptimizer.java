@@ -79,6 +79,12 @@ public class SplitOptimizer {
 
                 result.splits.add(split);
                 utilizedWarehouseIds.add(fullCoverageWarehouse.getId());
+
+                String key = fullCoverageWarehouse.getId() + ":" + product.getId();
+                WarehouseStock stock = stockMap.get(key);
+                if (stock != null) {
+                    stock.setAvailable(Math.max(0, stock.getAvailable() - requiredQty));
+                }
             } else {
                 // Greedily split across candidate warehouses sorted by freight cost
                 for (Warehouse wh : warehouses) {
@@ -103,6 +109,7 @@ public class SplitOptimizer {
 
                         result.splits.add(split);
                         utilizedWarehouseIds.add(wh.getId());
+                        stock.setAvailable(stock.getAvailable() - allocatable);
                         remainingQty -= allocatable;
                     }
                 }

@@ -59,13 +59,53 @@ public class QuotationController {
         return ResponseEntity.ok(quotationService.updateQuotationLines(id, lines, changedBy));
     }
 
-    @PostMapping("/{id}/submit")
+    @PutMapping("/{id}")
+    @Operation(summary = "Update quotation lines or general details")
+    public ResponseEntity<Quotation> updateQuotation(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            @AuthenticationPrincipal AuthUser authUser) {
+        String changedBy = authUser != null ? authUser.getName() : "Sales Rep";
+        if (body.containsKey("lines") && body.get("lines") instanceof List<?> rawList) {
+            List<LineItemRequest> lineRequests = new java.util.ArrayList<>();
+            for (Object obj : rawList) {
+                if (obj instanceof Map<?, ?> l) {
+                    Long productId = l.get("productId") != null ? Long.valueOf(l.get("productId").toString()) : null;
+                    Integer qty = l.get("quantity") != null ? Integer.valueOf(l.get("quantity").toString()) : 1;
+                    java.math.BigDecimal disc = java.math.BigDecimal.ZERO;
+                    if (l.containsKey("discountPercent") && l.get("discountPercent") != null) {
+                        disc = new java.math.BigDecimal(l.get("discountPercent").toString());
+                    } else if (l.containsKey("unitDiscountPct") && l.get("unitDiscountPct") != null) {
+                        disc = new java.math.BigDecimal(l.get("unitDiscountPct").toString());
+                    }
+                    lineRequests.add(LineItemRequest.builder()
+                            .productId(productId)
+                            .quantity(qty)
+                            .discountPercent(disc)
+                            .build());
+                }
+            }
+            return ResponseEntity.ok(quotationService.updateQuotationLines(id, lineRequests, changedBy));
+        }
+        return ResponseEntity.ok(quotationService.getQuotationById(id));
+    }
+
+    @PostMapping({"/{id}/submit", "/{id}/submit-approval"})
     @Operation(summary = "Submit quotation for automatic blended risk evaluation and approval routing")
     public ResponseEntity<Map<String, Object>> submitForApproval(
             @PathVariable Long id,
             @AuthenticationPrincipal AuthUser authUser) {
         String submittedBy = authUser != null ? authUser.getName() : "Sales Rep";
         return ResponseEntity.ok(quotationService.submitForApproval(id, submittedBy));
+    }
+
+    @PostMapping("/{id}/confirm")
+    @Operation(summary = "Confirm quotation terms and transition to CONFIRMED status")
+    public ResponseEntity<Quotation> confirmQuotation(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUser authUser) {
+        String confirmedBy = authUser != null ? authUser.getName() : "Sales Rep";
+        return ResponseEntity.ok(quotationService.confirmQuotation(id, confirmedBy));
     }
 
     @GetMapping("/{id}/risk-breakdown")

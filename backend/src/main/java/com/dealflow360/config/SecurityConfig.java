@@ -81,14 +81,18 @@ public class SecurityConfig {
                 // ── APPROVAL ACTIONS: MANAGER + FINANCE + ADMIN ──────────────
                 // Fine-grained control handled by @PreAuthorize in the controller
                 // This is a secondary defense layer
-                .requestMatchers(HttpMethod.POST, "/api/approvals/act").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE")
+                // ── APPROVAL ACTIONS: MANAGER + FINANCE + ADMIN ──────────────
+                // Fine-grained control handled by @PreAuthorize in the controller
+                // This is a secondary defense layer
+                .requestMatchers(HttpMethod.POST, "/api/approvals/act", "/api/approvals/*/action").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE")
 
-                // ── INVOICE ENDPOINTS: FINANCE + ADMIN ───────────────────────
+                // ── INVOICE ENDPOINTS: READ by REPS/MANAGERS/FINANCE/ADMIN, MUTATIONS by FINANCE + ADMIN ───
+                .requestMatchers(HttpMethod.GET, "/api/invoices/**").hasAnyRole("ADMIN", "FINANCE", "SALES_MANAGER", "SALES_REP")
                 .requestMatchers("/api/invoices/**").hasAnyRole("ADMIN", "FINANCE")
 
-                // ── WAREHOUSE ENDPOINTS: FINANCE + MANAGER + ADMIN ───────────
+                // ── WAREHOUSE & FULFILLMENT ENDPOINTS ─────────────────────────
                 .requestMatchers("/api/warehouses/**").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE")
-                .requestMatchers("/api/fulfillment/**").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE", "SALES_REP")
+                .requestMatchers("/api/fulfillment/**", "/api/fulfillments/**").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE", "SALES_REP")
 
                 // ── CURRENT USER PROFILE ─────────────────────────────────────
                 .requestMatchers("/api/auth/me").authenticated()

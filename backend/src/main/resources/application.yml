@@ -9,7 +9,7 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/dealflow360_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
     username: root
-    password: root
+    password: ${DB_PASSWORD:0721}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:

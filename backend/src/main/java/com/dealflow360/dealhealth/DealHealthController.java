@@ -19,7 +19,7 @@ public class DealHealthController {
         this.anomalyDetectionService = anomalyDetectionService;
     }
 
-    @GetMapping
+    @GetMapping({"", "/flags"})
     @Operation(summary = "Get all active deal health and anomaly alert flags")
     public ResponseEntity<List<DealHealthFlag>> getActiveFlags() {
         return ResponseEntity.ok(anomalyDetectionService.getActiveFlags());
@@ -32,23 +32,33 @@ public class DealHealthController {
         return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Health scan completed"));
     }
 
-    @PostMapping("/{id}/nudge")
+    @PostMapping({"/{id}/nudge", "/flags/{id}/nudge"})
     @Operation(summary = "Send an automated nudge to the responsible sales rep for a stalled or at-risk deal")
     public ResponseEntity<Map<String, Object>> nudgeRep(@PathVariable Long id) {
         return ResponseEntity.ok(anomalyDetectionService.nudgeRep(id));
     }
 
-    @PostMapping("/{id}/escalate")
+    @PostMapping({"/{id}/escalate", "/flags/{id}/escalate"})
     @Operation(summary = "Escalate an at-risk deal to Sales VP and Commercial Finance")
     public ResponseEntity<Map<String, Object>> escalateFlag(@PathVariable Long id) {
         return ResponseEntity.ok(anomalyDetectionService.escalateFlag(id));
     }
 
-    @PostMapping("/{id}/resolve")
+    @PostMapping({"/{id}/resolve", "/flags/{id}/resolve"})
     @Operation(summary = "Mark a deal health flag as resolved")
     public ResponseEntity<DealHealthFlag> resolveFlag(
             @PathVariable Long id,
-            @RequestParam(defaultValue = "Resolved via manager intervention") String actionTaken) {
-        return ResponseEntity.ok(anomalyDetectionService.resolveFlag(id, actionTaken));
+            @RequestParam(required = false) String actionTaken,
+            @RequestBody(required = false) Map<String, String> body) {
+        String resolution = actionTaken;
+        if (body != null) {
+            if (body.containsKey("actionTaken")) resolution = body.get("actionTaken");
+            else if (body.containsKey("notes")) resolution = body.get("notes");
+            else if (body.containsKey("resolution")) resolution = body.get("resolution");
+        }
+        if (resolution == null || resolution.isBlank()) {
+            resolution = "Resolved via manager intervention";
+        }
+        return ResponseEntity.ok(anomalyDetectionService.resolveFlag(id, resolution));
     }
 }

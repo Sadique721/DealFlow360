@@ -172,6 +172,72 @@ public class QuotationService {
         return quotation;
     }
 
+    public Quotation addProductLine(Long quotationId, Long productId, int quantity, BigDecimal discountPercent, String changedBy) {
+        Quotation quotation = getQuotationById(quotationId);
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found: " + productId));
+
+        BigDecimal disc = discountPercent != null ? discountPercent : BigDecimal.ZERO;
+        BigDecimal unitPrice = product.getBasePrice();
+        BigDecimal discountFactor = BigDecimal.ONE.subtract(disc.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+        BigDecimal discAmount = unitPrice.multiply(disc.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+        int qty = Math.max(1, quantity);
+        BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(qty)).multiply(discountFactor).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalCost = product.getCostPrice().multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal marginAmount = lineTotal.subtract(totalCost).setScale(2, RoundingMode.HALF_UP);
+
+        String lineType = Boolean.TRUE.equals(product.getIsSubscription()) ? "RECURRING" : "ONE_TIME";
+
+        QuotationLine line = QuotationLine.builder()
+                .quotation(quotation)
+                .product(product)
+                .quantity(qty)
+                .unitPrice(unitPrice)
+                .discountPercent(disc)
+                .lineTotal(lineTotal)
+                .costPrice(product.getCostPrice())
+                .marginAmount(marginAmount)
+                .lineType(lineType)
+                .status("OK")
+                .overagePoints(BigDecimal.ZERO)
+                .build();
+
+        quotation.getLines().add(line);
+        quotationLineRepository.save(line);
+        recalculateQuotation(quotation);
+
+        quotation.setVersion(quotation.getVersion() + 1);
+        quotation.setLastActivityAt(LocalDateTime.now());
+        quotationRepository.save(quotation);
+
+        createVersionSnapshot(quotation, changedBy != null ? changedBy : "System", "Added product: " + product.getName());
+
+        // Push live margin update via WebSocket
+        Map<String, Object> wsPayload = new HashMap<>();
+        wsPayload.put("quotationId", quotation.getId());
+        wsPayload.put("totalAmount", quotation.getTotalAmount());
+        wsPayload.put("totalMarginAmount", quotation.getTotalMarginAmount());
+        wsPayload.put("marginPercentage", quotation.getMarginPercentage());
+        wsPayload.put("blendedRiskScore", quotation.getBlendedRiskScore());
+        webSocketPublisher.publishMarginUpdate(quotation.getId(), wsPayload);
+
+        return quotation;
+    }
+
+    public Quotation confirmQuotation(Long quotationId, String confirmedBy) {
+        Quotation quotation = getQuotationById(quotationId);
+        String prevStatus = quotation.getStatus();
+        quotation.setStatus("CONFIRMED");
+        quotation.setLastActivityAt(LocalDateTime.now());
+        quotation = quotationRepository.save(quotation);
+
+        auditService.log("QUOTATION", quotation.getId(), "CONFIRMED", confirmedBy,
+                prevStatus, "CONFIRMED", "Quotation confirmed by sales representative",
+                quotation.getMarginPercentage());
+
+        return quotation;
+    }
+
     private void applyLineItems(Quotation quotation, List<LineItemRequest> lineRequests) {
         for (LineItemRequest lr : lineRequests) {
             Product product = productRepository.findById(lr.getProductId())

@@ -6,7 +6,6 @@ import { ApprovalService } from '../services/approval.service';
 import { QuotationService } from '../services/quotation.service';
 import { AuthService } from '../services/auth.service';
 import { ApprovalRequest, ApprovalStep, Quotation, LineOverageDetail } from '../models/dealflow.model';
-import { generate120Approvals, generate120Quotations } from '../services/mock-data';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -731,8 +730,7 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    const quotes = generate120Quotations();
-    this.approvals = generate120Approvals(quotes);
+    this.approvals = [];
 
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
@@ -746,19 +744,31 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
       })
     );
 
-    const routeId = this.route.snapshot.paramMap.get('id');
-    if (routeId && routeId !== 'new') {
-      const numericId = parseInt(routeId, 10);
-      const matched = this.approvals.find(a => a.id === numericId || a.quotation.id === numericId);
-      if (matched) {
-        this.selectApproval(matched);
-      } else if (this.approvals.length > 0) {
-        this.selectApproval(this.approvals[0]);
+    this.loadApprovals();
+  }
+
+  loadApprovals(): void {
+    this.approvalService.getPendingRequests().subscribe({
+      next: (reqs) => {
+        this.approvals = reqs || [];
+        const routeId = this.route.snapshot.paramMap.get('id');
+        if (routeId && routeId !== 'new') {
+          const numericId = parseInt(routeId, 10);
+          const matched = this.approvals.find(a => a.id === numericId || a.quotation?.id === numericId);
+          if (matched) {
+            this.selectApproval(matched);
+          } else if (this.approvals.length > 0) {
+            this.selectApproval(this.approvals[0]);
+          }
+        } else if (this.approvals.length > 0) {
+          this.selectedApproval = this.approvals[0];
+          this.parseCulprits(this.selectedApproval);
+        }
+      },
+      error: () => {
+        this.approvals = [];
       }
-    } else if (this.approvals.length > 0) {
-      this.selectedApproval = this.approvals[0];
-      this.parseCulprits(this.selectedApproval);
-    }
+    });
   }
 
   ngOnDestroy(): void {
@@ -932,25 +942,33 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
       return;
     }
 
-    if (action === 'APPROVE') {
-      this.selectedApproval.status = 'APPROVED';
-      this.selectedApproval.quotation.status = 'APPROVED';
-      if (this.selectedApproval.steps && this.selectedApproval.steps[0]) {
-        this.selectedApproval.steps[0].status = 'APPROVED';
-        this.selectedApproval.steps[0].comments = this.decisionComments || 'Approved in accordance with margin risk policy.';
+    const quoteId = this.selectedApproval.quotation?.id || this.selectedApproval.id;
+    this.approvalService.processDecision(quoteId, action, this.decisionComments || '').subscribe({
+      next: () => {
+        alert(`Quotation ${this.selectedApproval?.quotation?.quoteNumber || ''} decision [${action}] committed to database!`);
+        this.loadApprovals();
+        this.activeTab = 'queue';
+      },
+      error: (err) => {
+        alert('Decision could not be processed: ' + (err.error?.message || err.message || 'Error'));
       }
-      alert(`Quotation ${this.selectedApproval.quotation.quoteNumber} successfully APPROVED by ${this.currentUserName}. Immutable audit entry logged.`);
-    } else if (action === 'REJECT') {
-      this.selectedApproval.status = 'REJECTED';
-      this.selectedApproval.quotation.status = 'REJECTED';
-      if (this.selectedApproval.steps && this.selectedApproval.steps[0]) {
-        this.selectedApproval.steps[0].status = 'REJECTED';
-        this.selectedApproval.steps[0].comments = this.decisionComments || 'Rejected: Margin erosion exceeds acceptable threshold.';
-      }
-      alert(`Quotation ${this.selectedApproval.quotation.quoteNumber} REJECTED.`);
-    } else {
-      alert(`Rebalance requested on ${this.selectedApproval.quotation.quoteNumber}. Returned to representative.`);
-    }
+    });
+  }
+
+  getMargin(q?: Quotation): number {
+    if (!q) return 0;
+    return q.marginPct ?? q.marginPercentage ?? 0;
+  }
+
+  getRiskScore(q?: Quotation): number {
+    if (!q) return 0;
+    return q.riskScore ?? q.blendedRiskScore ?? 0;
+  }
+
+  getTierName(customer?: any): string {
+    if (!customer || !customer.tier) return 'Standard';
+    if (typeof customer.tier === 'string') return customer.tier;
+    return customer.tier.tierName || 'Standard';
   }
 
   formatCurrency(val: number): string {

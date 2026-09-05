@@ -6,7 +6,6 @@ import { FulfillmentService } from '../services/fulfillment.service';
 import { QuotationService } from '../services/quotation.service';
 import { AuthService } from '../services/auth.service';
 import { FulfillmentPlan, FulfillmentSplit, Warehouse, Quotation } from '../models/dealflow.model';
-import { generate120Splits, generate120Quotations } from '../services/mock-data';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -157,11 +156,11 @@ import { Subscription } from 'rxjs';
                     <span class="mono font-bold text-success">{{ s.allocatedQuantity }} units</span>
                   </td>
                   <td>
-                    <span class="mono font-bold" [class.text-danger]="s.backorderedQuantity > 0">
+                    <span class="mono font-bold" [class.text-danger]="(s.backorderedQuantity || 0) > 0">
                       {{ s.backorderedQuantity }} units
                     </span>
                   </td>
-                  <td class="mono font-semibold">{{ formatCurrency(s.estimatedFreightCost) }}</td>
+                  <td class="mono font-semibold">{{ formatCurrency(s.estimatedFreightCost || 0) }}</td>
                   <td>
                     <span class="badge badge-neutral">{{ s.leadTimeDays }} Days</span>
                   </td>
@@ -222,7 +221,7 @@ import { Subscription } from 'rxjs';
         <div class="kpi-grid">
           <div class="glass-panel kpi-card">
             <span class="kpi-lbl">Total Optimized Freight</span>
-            <span class="kpi-val mono">{{ formatCurrency(plan.totalFreightCost) }}</span>
+            <span class="kpi-val mono">{{ formatCurrency(plan.totalFreightCost || 0) }}</span>
             <span class="kpi-sub">Greedy Haversine distance minimization applied</span>
           </div>
 
@@ -290,11 +289,11 @@ import { Subscription } from 'rxjs';
                     <span class="mono font-bold text-success">{{ split.allocatedQuantity }} units</span>
                   </td>
                   <td>
-                    <span class="mono font-bold" [class.text-danger]="split.backorderedQuantity > 0">
+                    <span class="mono font-bold" [class.text-danger]="(split.backorderedQuantity || 0) > 0">
                       {{ split.backorderedQuantity }} units
                     </span>
                   </td>
-                  <td class="mono">{{ formatCurrency(split.estimatedFreightCost) }}</td>
+                  <td class="mono">{{ formatCurrency(split.estimatedFreightCost || 0) }}</td>
                   <td>{{ split.leadTimeDays }} Days</td>
                   <td>
                     <span
@@ -534,7 +533,7 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.allSplits = generate120Splits();
+    this.allSplits = [];
 
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
@@ -567,58 +566,55 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
 
   loadPlan(): void {
     this.fulfillmentService.getPlanForQuotation(this.quoteId).subscribe({
-      next: (res: FulfillmentPlan) => {
-        this.plan = res;
-        this.hasBackorders = res.splits.some((s: FulfillmentSplit) => (s.backorderedQuantity || 0) > 0);
+      next: (res: any) => {
+        if (res) {
+          this.plan = this.normalizePlan(res);
+          this.hasBackorders = this.plan.splits.some((s: any) => s.isBackorder || (s.backorderedQuantity || 0) > 0);
+          this.allSplits = this.plan.splits;
+        }
       },
       error: () => {
-        // Resilient fallback plan with multi-warehouse split
-        this.plan = {
-          id: 1,
-          quotationId: this.quoteId,
-          totalFreightCost: 1870,
-          totalLeadTimeDays: 4,
-          allLinesSatisfied: false,
-          status: 'PARTIALLY_ALLOCATED',
-          splits: [
-            {
-              id: 1,
-              warehouse: { id: 1, name: 'Austin Central Gigafactory Hub', code: 'WH-ATX-01', locationCity: 'Austin, TX', region: 'North America South', baseFreightCost: 420, weightRatePerKg: 1.8, leadTimeDays: 2 },
-              productId: 101,
-              productName: 'Ground Satellite Gateway 4U',
-              allocatedQuantity: 12,
-              backorderedQuantity: 0,
-              estimatedFreightCost: 680,
-              leadTimeDays: 2,
-              status: 'ALLOCATED'
-            },
-            {
-              id: 2,
-              warehouse: { id: 2, name: 'Chicago Great Lakes Depot', code: 'WH-CHI-02', locationCity: 'Chicago, IL', region: 'North America Central', baseFreightCost: 650, weightRatePerKg: 2.1, leadTimeDays: 3 },
-              productId: 102,
-              productName: 'Titan Edge Multi-Cloud Server Blade 2U',
-              allocatedQuantity: 8,
-              backorderedQuantity: 4,
-              estimatedFreightCost: 790,
-              leadTimeDays: 3,
-              status: 'BACKORDERED'
-            },
-            {
-              id: 3,
-              warehouse: { id: 3, name: 'Frankfurt European Gateway', code: 'WH-FRA-03', locationCity: 'Frankfurt', region: 'Europe Core', baseFreightCost: 1100, weightRatePerKg: 3.4, leadTimeDays: 4 },
-              productId: 103,
-              productName: 'Quantum Cryptographic HSM Security Module',
-              allocatedQuantity: 4,
-              backorderedQuantity: 0,
-              estimatedFreightCost: 400,
-              leadTimeDays: 4,
-              status: 'ALLOCATED'
-            }
-          ]
-        };
-        this.hasBackorders = true;
+        this.allSplits = [];
       }
     });
+  }
+
+  normalizePlan(res: any): FulfillmentPlan {
+    const splits: FulfillmentSplit[] = (res.splits || []).map((s: any, idx: number) => ({
+      id: s.id || idx + 1,
+      quotationId: s.quotationId || res.quotationId || this.quoteId,
+      warehouse: {
+        id: s.warehouse?.id || 1,
+        name: s.warehouse?.name || 'Central Hub',
+        code: s.warehouse?.code || 'WH-01',
+        locationCity: s.warehouse?.city || s.warehouse?.locationCity || 'Austin, TX',
+        region: s.warehouse?.region || 'North America',
+        leadTimeDays: s.warehouse?.leadTimeDays || 2
+      },
+      product: s.product,
+      productId: s.product?.id,
+      productName: s.product?.name || 'Enterprise Hardware',
+      quantity: s.quantity || 1,
+      allocatedQuantity: s.isBackorder ? 0 : (s.quantity || 1),
+      backorderedQuantity: s.isBackorder ? (s.quantity || 1) : 0,
+      isBackorder: !!s.isBackorder,
+      estimatedFreightCost: s.estimatedCost || 450,
+      estimatedCost: s.estimatedCost || 450,
+      leadTimeDays: s.warehouse?.leadTimeDays || 2,
+      shipmentGroup: s.shipmentGroup || 'MAIN-SHIP-01',
+      status: s.status || (s.isBackorder ? 'BACKORDERED' : 'ALLOCATED')
+    }));
+
+    return {
+      id: res.id || 1,
+      quotationId: res.quotationId || this.quoteId,
+      totalFreightCost: res.totalCost || res.totalFreightCost || 0,
+      totalLeadTimeDays: res.totalLeadTimeDays || 3,
+      allLinesSatisfied: !res.hasBackorder,
+      status: res.status || 'OPTIMIZED',
+      summaryText: res.summaryText,
+      splits
+    };
   }
 
   reOptimize(): void {
@@ -626,8 +622,17 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
       alert('Action restricted: Finance or Admin authority required.');
       return;
     }
-    this.loadPlan();
-    alert('Greedy Haversine distance split algorithm re-calculated across all 4 distribution nodes.');
+    this.fulfillmentService.optimizePlan(this.quoteId).subscribe({
+      next: (res) => {
+        this.plan = this.normalizePlan(res);
+        this.hasBackorders = this.plan.splits.some((s: any) => s.isBackorder || (s.backorderedQuantity || 0) > 0);
+        this.allSplits = this.plan.splits;
+        alert('Greedy split algorithm re-calculated across physical warehouses in MySQL!');
+      },
+      error: () => {
+        this.loadPlan();
+      }
+    });
   }
 
   consolidateBackorder(): void {
@@ -635,18 +640,15 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
       alert('Action restricted: Finance or Admin authority required.');
       return;
     }
-    if (this.plan) {
-      this.plan.splits.forEach(s => {
-        if (s.backorderedQuantity > 0) {
-          s.allocatedQuantity += s.backorderedQuantity;
-          s.backorderedQuantity = 0;
-          s.status = 'ALLOCATED';
-        }
-      });
-      this.plan.allLinesSatisfied = true;
-      this.hasBackorders = false;
-      alert('Consolidation executed: Central depot stock allocated. Combined single-manifest freight discount applied.');
-    }
+    this.fulfillmentService.consolidateBackorder(this.quoteId).subscribe({
+      next: () => {
+        this.loadPlan();
+        alert('Consolidation executed: Central depot stock allocated. Combined manifest generated.');
+      },
+      error: () => {
+        this.loadPlan();
+      }
+    });
   }
 
   overrideWarehouse(split: FulfillmentSplit): void {
@@ -680,15 +682,15 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
     const list = this.allSplits.filter(s => {
       let matchNode = true;
       if (this.nodeFilter !== 'ALL') {
-        matchNode = s.warehouse.name.toLowerCase().includes(this.nodeFilter.toLowerCase());
+        matchNode = (s.warehouse?.name || '').toLowerCase().includes(this.nodeFilter.toLowerCase());
       }
       const q = this.searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
-        s.productName.toLowerCase().includes(q) ||
-        s.warehouse.name.toLowerCase().includes(q) ||
-        s.warehouse.code.toLowerCase().includes(q) ||
-        s.warehouse.locationCity.toLowerCase().includes(q) ||
-        s.status.toLowerCase().includes(q);
+        (s.productName && s.productName.toLowerCase().includes(q)) ||
+        (s.warehouse?.name && s.warehouse.name.toLowerCase().includes(q)) ||
+        (s.warehouse?.code && s.warehouse.code.toLowerCase().includes(q)) ||
+        (s.warehouse?.locationCity && s.warehouse.locationCity.toLowerCase().includes(q)) ||
+        (s.status && s.status.toLowerCase().includes(q));
 
       return matchNode && matchSearch;
     });

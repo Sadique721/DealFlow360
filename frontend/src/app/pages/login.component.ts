@@ -126,6 +126,35 @@ type TabMode = 'login' | 'signup';
                 Internal staff members receive login credentials via email when provisioned by the Administrator.
               </p>
             </div>
+
+            <!-- Demo Persona Quick Select -->
+            <div class="demo-personas-section">
+              <div class="demo-divider">
+                <span>⚡ Fast Role Login (Active Database Accounts)</span>
+              </div>
+              <div class="persona-chips">
+                <button type="button" class="persona-chip admin" (click)="quickLogin('admin@dealflow360.com', 'Admin@123')">
+                  <span class="chip-badge">ADMIN</span>
+                  <span class="chip-label">admin&#64;dealflow360.com</span>
+                </button>
+                <button type="button" class="persona-chip rep" (click)="quickLogin('j.rao@dealflow360.com', 'password123')">
+                  <span class="chip-badge">SALES REP</span>
+                  <span class="chip-label">j.rao&#64;dealflow360.com</span>
+                </button>
+                <button type="button" class="persona-chip mgr" (click)="quickLogin('m.shah@dealflow360.com', 'password123')">
+                  <span class="chip-badge">SALES MGR</span>
+                  <span class="chip-label">m.shah&#64;dealflow360.com</span>
+                </button>
+                <button type="button" class="persona-chip fin" (click)="quickLogin('r.iyer@dealflow360.com', 'password123')">
+                  <span class="chip-badge">FINANCE</span>
+                  <span class="chip-label">r.iyer&#64;dealflow360.com</span>
+                </button>
+                <button type="button" class="persona-chip cust" (click)="quickLogin('buyer@acmecorp.com', 'password123')">
+                  <span class="chip-badge">CUSTOMER</span>
+                  <span class="chip-label">buyer&#64;acmecorp.com</span>
+                </button>
+              </div>
+            </div>
           </ng-container>
 
           <!-- ─── CUSTOMER SIGN UP ─── -->
@@ -459,6 +488,66 @@ type TabMode = 'login' | 'signup';
       text-decoration: underline;
     }
 
+    .demo-personas-section {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px dashed var(--border-light, #e2e8f0);
+    }
+    .demo-divider {
+      text-align: center;
+      margin-bottom: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .persona-chips {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .persona-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 3px;
+      padding: 8px 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+    .persona-chip:hover {
+      background: #eff6ff;
+      border-color: #3b82f6;
+      transform: translateY(-1px);
+    }
+    .chip-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #e2e8f0;
+      color: #334155;
+    }
+    .admin .chip-badge { background: #fee2e2; color: #b91c1c; }
+    .rep .chip-badge { background: #e0e7ff; color: #3730a3; }
+    .mgr .chip-badge { background: #fef3c7; color: #92400e; }
+    .fin .chip-badge { background: #dcfce7; color: #166534; }
+    .cust .chip-badge { background: #f3e8ff; color: #6b21a8; }
+    .chip-label {
+      font-size: 11px;
+      color: #64748b;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
     @media (max-width: 860px) {
       .login-page {
         grid-template-columns: 1fr;
@@ -506,6 +595,12 @@ export class LoginComponent implements OnInit {
     this.loginError = '';
     this.signupError = '';
     this.signupSuccess = '';
+  }
+
+  quickLogin(email: string, pw: string) {
+    this.loginEmail = email;
+    this.loginPassword = pw;
+    this.handleLogin();
   }
 
   async handleLogin() {

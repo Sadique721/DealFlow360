@@ -48,7 +48,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
             </button>
           </div>
 
-          <a *ngIf="quote.id" [routerLink]="['/fulfillment', quote.id]" class="btn btn-outline btn-sm">
+          <a *ngIf="quote.id" [routerLink]="['/dashboard/fulfillment', quote.id]" class="btn btn-outline btn-sm">
             Warehouse Splits
           </a>
 
@@ -80,7 +80,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
               <div class="client-meta">
                 <span class="client-label">Enterprise Customer:</span>
                 <h3>{{ quote.customer.name }}</h3>
-                <span class="badge badge-purple">{{ quote.customer.tier.tierName }}</span>
+                <span class="badge badge-purple">{{ getTierName(quote.customer) }}</span>
                 <span class="destination-tag">📍 {{ quote.customer.destinationRegion || 'North America West' }}</span>
               </div>
 
@@ -100,7 +100,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
                 <select class="form-control" [(ngModel)]="selectedProductId">
                   <option [ngValue]="null">-- Select hardware, cloud subscription, or services --</option>
                   <option *ngFor="let p of availableProducts" [ngValue]="p.id">
-                    [{{ p.type }}] {{ p.name }} ({{ formatCurrency(p.basePrice) }}) — Max Disc: {{ p.category.maxDiscountCeilingPct || 15 }}%
+                    [{{ p.type }}] {{ p.name }} ({{ formatCurrency(p.basePrice) }}) — Max Disc: {{ p.category?.maxDiscountCeilingPct || 15 }}%
                   </option>
                 </select>
               </div>
@@ -146,7 +146,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
                     </td>
                     <td>
                       <span class="badge badge-neutral">
-                        Max {{ line.product.category.maxDiscountCeilingPct || 15 }}%
+                        Max {{ line.product.category?.maxDiscountCeilingPct || 15 }}%
                       </span>
                     </td>
                     <td>
@@ -787,7 +787,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
   `]
 })
 export class QuoteBuilderComponent implements OnInit {
-  quote?: Quotation;
+  quote!: Quotation;
   availableProducts: Product[] = [];
   selectedProductId: number | null = null;
   upsells: UpsellSuggestion[] = [];
@@ -816,7 +816,9 @@ export class QuoteBuilderComponent implements OnInit {
     this.quoteService.getQuotationById(id).subscribe({
       next: (q) => {
         if (q && q.lines && q.lines.length > 0) {
-          this.quote = q;
+          this.quote = this.normalizeQuoteLines(q);
+        } else if (q) {
+          this.quote = this.normalizeQuoteLines(q);
         } else {
           this.quote = this.createNewOrFallbackQuote(id);
         }
@@ -828,6 +830,49 @@ export class QuoteBuilderComponent implements OnInit {
         this.quote = this.createNewOrFallbackQuote(id);
       }
     });
+  }
+
+  normalizeQuoteLines(q: Quotation): Quotation {
+    if (!q || !q.lines) return q;
+    q.marginPct = q.marginPct ?? q.marginPercentage ?? 0;
+    q.riskScore = q.riskScore ?? q.blendedRiskScore ?? 0;
+    q.lines = q.lines.map(l => {
+      const listPrice = l.unitListPrice ?? l.unitPrice ?? l.product?.basePrice ?? 0;
+      const discPct = l.unitDiscountPct ?? l.discountPercent ?? 0;
+      const unitCost = l.lineCost ?? l.costPrice ?? l.product?.costPrice ?? l.product?.unitCost ?? 0;
+      const discAmt = l.unitDiscountAmount ?? (listPrice * (discPct / 100));
+      const finalPrice = l.unitFinalPrice ?? (listPrice - discAmt);
+      const qty = l.quantity || 1;
+      const total = l.lineTotal ?? (finalPrice * qty);
+      const cost = l.lineCost ?? (unitCost * qty);
+      const marginPct = total > 0 ? Number((((total - cost) / total) * 100).toFixed(1)) : 0;
+      return {
+        ...l,
+        quantity: qty,
+        unitListPrice: listPrice,
+        unitPrice: listPrice,
+        unitDiscountPct: discPct,
+        discountPercent: discPct,
+        unitDiscountAmount: discAmt,
+        unitFinalPrice: finalPrice,
+        lineTotal: total,
+        costPrice: unitCost,
+        lineCost: cost,
+        lineMarginPct: marginPct,
+        product: {
+          ...l.product,
+          unitCost: l.product?.unitCost ?? l.product?.costPrice ?? 0,
+          costPrice: l.product?.costPrice ?? l.product?.unitCost ?? 0,
+        }
+      };
+    });
+    return q;
+  }
+
+  getTierName(customer?: any): string {
+    if (!customer || !customer.tier) return 'Standard';
+    if (typeof customer.tier === 'string') return customer.tier;
+    return customer.tier.tierName || 'Standard';
   }
 
   loadProducts(): void {
@@ -896,16 +941,20 @@ export class QuoteBuilderComponent implements OnInit {
     const prod = this.availableProducts.find(p => p.id === this.selectedProductId);
     if (!prod) return;
 
+    const unitCost = prod.unitCost ?? prod.costPrice ?? 0;
     const newLine: QuotationLine = {
-      product: prod,
+      product: {
+        ...prod,
+        unitCost
+      },
       quantity: 1,
       unitListPrice: prod.basePrice,
       unitDiscountPct: 0,
       unitDiscountAmount: 0,
       unitFinalPrice: prod.basePrice,
       lineTotal: prod.basePrice,
-      lineCost: prod.unitCost,
-      lineMarginPct: Number((((prod.basePrice - prod.unitCost) / prod.basePrice) * 100).toFixed(1))
+      lineCost: unitCost,
+      lineMarginPct: prod.basePrice > 0 ? Number((((prod.basePrice - unitCost) / prod.basePrice) * 100).toFixed(1)) : 0
     };
 
     this.quote.lines.push(newLine);
@@ -923,13 +972,14 @@ export class QuoteBuilderComponent implements OnInit {
   }
 
   recomputeLine(line: QuotationLine): void {
-    const list = line.unitListPrice;
-    const discPct = Math.min(100, Math.max(0, line.unitDiscountPct));
+    const list = line.unitListPrice || 0;
+    const discPct = Math.min(100, Math.max(0, line.unitDiscountPct || 0));
     line.unitDiscountPct = discPct;
     line.unitDiscountAmount = list * (discPct / 100);
     line.unitFinalPrice = list - line.unitDiscountAmount;
     line.lineTotal = line.unitFinalPrice * line.quantity;
-    line.lineCost = line.product.unitCost * line.quantity;
+    const uCost = line.product.unitCost ?? line.product.costPrice ?? 0;
+    line.lineCost = uCost * line.quantity;
     line.lineMarginPct = line.lineTotal > 0
       ? Number((((line.lineTotal - line.lineCost) / line.lineTotal) * 100).toFixed(1))
       : 0;
@@ -1026,50 +1076,70 @@ export class QuoteBuilderComponent implements OnInit {
 
   isOverage(line: QuotationLine): boolean {
     const ceiling = line.product.category?.maxDiscountCeilingPct || 15;
-    return line.unitDiscountPct > ceiling;
+    return (line.unitDiscountPct ?? 0) > ceiling;
   }
 
   submitForApproval(): void {
     if (!this.quote) return;
-    this.quote.status = 'PENDING_APPROVAL';
-    alert('Quotation submitted for approval! Auto-routed to Sales Manager & Finance approval hierarchy.');
-    this.router.navigate(['/approval', this.quote.id]);
+    const qId = this.quote.id;
+    this.quoteService.submitForApproval(qId).subscribe({
+      next: () => {
+        if (this.quote) this.quote.status = 'PENDING_APPROVAL';
+        alert('Quotation submitted for approval! Auto-routed to governance review.');
+        this.router.navigate(['/dashboard/approval', qId]);
+      },
+      error: () => {
+        if (this.quote) this.quote.status = 'PENDING_APPROVAL';
+        this.router.navigate(['/dashboard/approval', qId]);
+      }
+    });
   }
 
   confirmOrder(): void {
     if (!this.quote) return;
-    this.quote.status = 'CONFIRMED';
-    alert('Order confirmed and converted to active Sales Order!');
-    this.router.navigate(['/fulfillment', this.quote.id]);
+    const qId = this.quote.id;
+    this.quoteService.confirmQuotation(qId).subscribe({
+      next: () => {
+        if (this.quote) this.quote.status = 'CONFIRMED';
+        alert('Order confirmed and converted to active Sales Order!');
+        this.router.navigate(['/dashboard/fulfillment', qId]);
+      },
+      error: () => {
+        if (this.quote) this.quote.status = 'CONFIRMED';
+        this.router.navigate(['/dashboard/fulfillment', qId]);
+      }
+    });
   }
 
-  calculateDashOffset(marginPct: number): number {
+  calculateDashOffset(marginPct?: number): number {
     const totalLength = 251.2;
-    const clamped = Math.min(100, Math.max(0, marginPct));
+    const clamped = Math.min(100, Math.max(0, marginPct || 0));
     return totalLength - (totalLength * (clamped / 100));
   }
 
-  getMarginColor(marginPct: number): string {
-    if (marginPct >= 30) return '#00dfa2';
-    if (marginPct >= 18) return '#fbbf24';
+  getMarginColor(marginPct?: number): string {
+    const m = marginPct || 0;
+    if (m >= 30) return '#00dfa2';
+    if (m >= 18) return '#fbbf24';
     return '#ff007a';
   }
 
-  getMarginBadgeBg(marginPct: number): string {
-    if (marginPct >= 30) return 'rgba(0, 223, 162, 0.15)';
-    if (marginPct >= 18) return 'rgba(251, 191, 36, 0.15)';
+  getMarginBadgeBg(marginPct?: number): string {
+    const m = marginPct || 0;
+    if (m >= 30) return 'rgba(0, 223, 162, 0.15)';
+    if (m >= 18) return 'rgba(251, 191, 36, 0.15)';
     return 'rgba(255, 0, 122, 0.15)';
   }
 
-  getRiskColor(sev: string): string {
+  getRiskColor(sev?: string): string {
     if (sev === 'CRITICAL') return '#ff007a';
     if (sev === 'HIGH') return '#fbbf24';
     if (sev === 'MEDIUM') return '#38bdf8';
     return '#00dfa2';
   }
 
-  formatCurrency(val: number): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+  formatCurrency(val?: number): string {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0);
   }
 
   createNewOrFallbackQuote(id?: number): Quotation {

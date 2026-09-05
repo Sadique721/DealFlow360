@@ -6,7 +6,6 @@ import { QuotationService } from '../services/quotation.service';
 import { DealHealthService } from '../services/dealhealth.service';
 import { AuthService } from '../services/auth.service';
 import { Quotation, DealHealthFlag } from '../models/dealflow.model';
-import { generate120Quotations, generate120HealthFlags } from '../services/mock-data';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -194,7 +193,7 @@ import { Subscription } from 'rxjs';
             <div class="glass-panel deal-card" *ngFor="let q of getQuotesByStage('DRAFT').slice(0, 15)">
               <div class="card-top">
                 <span class="mono card-id">{{ q.quoteNumber }}</span>
-                <span class="badge badge-neutral">{{ q.customer.tier.tierName || 'Standard' }}</span>
+                <span class="badge badge-neutral">{{ getTierName(q.customer.tier) }}</span>
               </div>
               <h4 class="card-client">{{ q.customer.name }}</h4>
               <div class="card-value">{{ formatCurrency(q.totalAmount) }}</div>
@@ -209,7 +208,7 @@ import { Subscription } from 'rxjs';
               </div>
               <div class="card-footer">
                 <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/quote', q.id]" class="btn btn-outline btn-sm">Edit CPQ</a>
+                <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-outline btn-sm">Edit CPQ</a>
               </div>
             </div>
           </div>
@@ -243,7 +242,7 @@ import { Subscription } from 'rxjs';
               </div>
               <div class="card-footer">
                 <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/approval', q.id]" class="btn btn-danger btn-sm">Review & Rebalance</a>
+                <a [routerLink]="['/dashboard/approval', q.id]" class="btn btn-danger btn-sm">Review & Rebalance</a>
               </div>
             </div>
           </div>
@@ -277,7 +276,7 @@ import { Subscription } from 'rxjs';
               </div>
               <div class="card-footer">
                 <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/fulfillment', q.id]" class="btn btn-outline btn-sm">Split Logistics</a>
+                <a [routerLink]="['/dashboard/fulfillment', q.id]" class="btn btn-outline btn-sm">Split Logistics</a>
               </div>
             </div>
           </div>
@@ -311,7 +310,7 @@ import { Subscription } from 'rxjs';
               </div>
               <div class="card-footer">
                 <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a routerLink="/portal/token-zenith-1042" class="btn btn-outline btn-sm">Portal View ↗</a>
+                <a [routerLink]="['/portal', q.portalToken || q.portalAccessToken || 'magic-token-acme-1042-demo']" target="_blank" class="btn btn-outline btn-sm">Portal View ↗</a>
               </div>
             </div>
           </div>
@@ -345,7 +344,7 @@ import { Subscription } from 'rxjs';
               </div>
               <div class="card-footer">
                 <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/fulfillment', q.id]" class="btn btn-success btn-sm">Fulfillment</a>
+                <a [routerLink]="['/dashboard/fulfillment', q.id]" class="btn btn-success btn-sm">Fulfillment</a>
               </div>
             </div>
           </div>
@@ -393,7 +392,7 @@ import { Subscription } from 'rxjs';
                 <td>
                   <div class="customer-info">
                     <strong>{{ q.customer.name }}</strong>
-                    <span class="badge badge-neutral tier-tag">{{ q.customer.tier.tierName || 'Standard' }}</span>
+                    <span class="badge badge-neutral tier-tag">{{ getTierName(q.customer) }}</span>
                   </div>
                 </td>
                 <td>{{ q.salesRep.name }}</td>
@@ -437,9 +436,9 @@ import { Subscription } from 'rxjs';
                 </td>
                 <td>
                   <div class="row-actions">
-                    <a [routerLink]="['/quote', q.id]" class="btn btn-outline btn-sm">Edit</a>
-                    <a *ngIf="q.status === 'PENDING_APPROVAL'" [routerLink]="['/approval', q.id]" class="btn btn-danger btn-sm">Review</a>
-                    <a *ngIf="q.status === 'APPROVED' || q.status === 'ACCEPTED' || q.status === 'CONFIRMED'" [routerLink]="['/fulfillment', q.id]" class="btn btn-outline btn-sm">Splits</a>
+                    <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-outline btn-sm">Edit</a>
+                    <a *ngIf="q.status === 'PENDING_APPROVAL'" [routerLink]="['/dashboard/approval', q.id]" class="btn btn-danger btn-sm">Review</a>
+                    <a *ngIf="q.status === 'APPROVED' || q.status === 'ACCEPTED' || q.status === 'CONFIRMED'" [routerLink]="['/dashboard/fulfillment', q.id]" class="btn btn-outline btn-sm">Splits</a>
                   </div>
                 </td>
               </tr>
@@ -913,8 +912,7 @@ export class PipelineComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    // Generate deterministic 120+ quotations
-    this.allQuotations = generate120Quotations();
+    this.allQuotations = [];
 
     // Subscribe to active persona changes
     this.subs.add(
@@ -941,9 +939,7 @@ export class PipelineComponent implements OnInit, OnDestroy {
   loadData(): void {
     this.quoteService.getQuotations().subscribe({
       next: (quotes) => {
-        if (quotes && quotes.length > 5) {
-          this.allQuotations = quotes;
-        }
+        this.allQuotations = quotes || [];
         this.applyRbacFilter();
       },
       error: () => {
@@ -953,16 +949,18 @@ export class PipelineComponent implements OnInit, OnDestroy {
 
     this.healthService.getActiveFlags().subscribe({
       next: (flags) => {
-        if (flags && flags.length > 0) {
-          this.anomalies = flags;
-        } else {
-          this.anomalies = generate120HealthFlags(this.allQuotations).slice(0, 15);
-        }
+        this.anomalies = flags || [];
       },
       error: () => {
-        this.anomalies = generate120HealthFlags(this.allQuotations).slice(0, 15);
+        this.anomalies = [];
       }
     });
+  }
+
+  getTierName(customer?: any): string {
+    if (!customer || !customer.tier) return 'Standard';
+    if (typeof customer.tier === 'string') return customer.tier;
+    return customer.tier.tierName || 'Standard';
   }
 
   applyRbacFilter(): void {

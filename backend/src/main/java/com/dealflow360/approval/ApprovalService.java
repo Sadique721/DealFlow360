@@ -125,7 +125,7 @@ public class ApprovalService {
                     "PENDING_APPROVAL", "REJECTED",
                     "Quotation rejected by " + approver.getRole() + ". Reason: " + request.getComments(),
                     BigDecimal.ZERO);
-        } else if ("RETURN".equalsIgnoreCase(action)) {
+        } else if ("RETURN".equalsIgnoreCase(action) || "REQUEST_MODIFICATION".equalsIgnoreCase(action)) {
             currentStep.setStatus("RETURNED");
             approvalStepRepository.save(currentStep);
 

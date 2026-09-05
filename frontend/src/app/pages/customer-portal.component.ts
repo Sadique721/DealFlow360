@@ -109,7 +109,7 @@ import { ApiService } from '../services/api.service';
               >
                 <div class="msg-header">
                   <span class="sender-name font-bold">{{ m.senderName }} ({{ m.senderRole }})</span>
-                  <span class="msg-time mono">{{ m.createdAt | date:'shortTime' }}</span>
+                  <span class="msg-time mono">{{ m.displayTime || (m.createdAt | date:'shortTime') }}</span>
                 </div>
                 <div class="msg-text">{{ m.message }}</div>
               </div>
@@ -361,6 +361,7 @@ export class CustomerPortalComponent implements OnInit {
         senderName: 'Jay Rao (DealFlow360)',
         senderRole: 'SALES_REP',
         message: 'Hello Sarah, here is the updated proposal including the Ground Satellite Gateways and Annual CPQ AI Governance. Please let us know if you need any adjustments.',
+        displayTime: '2 hours ago',
         createdAt: new Date(Date.now() - 7200000).toISOString()
       },
       {
@@ -368,6 +369,7 @@ export class CustomerPortalComponent implements OnInit {
         senderName: 'Sarah Chen (Zenith Systems)',
         senderRole: 'CUSTOMER',
         message: 'Thanks Jay. We are reviewing the gateway hardware quantities. Can you match 15% discount across the whole package if we commit this quarter?',
+        displayTime: '1 hour ago',
         createdAt: new Date(Date.now() - 3600000).toISOString()
       }
     ]
@@ -384,17 +386,35 @@ export class CustomerPortalComponent implements OnInit {
     this.loadPortalData();
   }
 
+  normalizePortalData(data: any): any {
+    if (!data) return data;
+    return {
+      ...data,
+      shippingAmount: data.shippingAmount || 0,
+      lines: (data.lines || []).map((l: any) => ({
+        ...l,
+        unitListPrice: l.unitListPrice ?? l.unitPrice,
+        unitDiscountPct: l.unitDiscountPct ?? l.discountPercent ?? 0,
+        lineTotal: l.lineTotal ?? ((l.unitPrice || 0) * (l.quantity || 1) * (1 - (l.discountPercent || 0) / 100))
+      })),
+      messages: (data.messages || []).map((m: any) => ({
+        ...m,
+        displayTime: m.timestamp || m.createdAt
+      }))
+    };
+  }
+
   loadPortalData(): void {
     this.api.get<any>(`portal/quotations/${this.token}`).subscribe({
       next: (data) => {
         if (data && data.lines && data.lines.length > 0) {
-          this.portalData = data;
+          this.portalData = this.normalizePortalData(data);
         } else {
-          this.portalData = this.fallbackZenithPortalData;
+          this.portalData = this.normalizePortalData(this.fallbackZenithPortalData);
         }
       },
       error: () => {
-        this.portalData = this.fallbackZenithPortalData;
+        this.portalData = this.normalizePortalData(this.fallbackZenithPortalData);
       }
     });
   }
@@ -403,19 +423,21 @@ export class CustomerPortalComponent implements OnInit {
     if (!this.newMessage.trim()) return;
     const msg = {
       id: Date.now(),
-      senderName: 'Sarah Chen (Zenith Systems)',
+      senderName: 'Sarah Chen (Customer Buyer)',
       senderRole: 'CUSTOMER',
       message: this.newMessage.trim(),
+      displayTime: 'Just now',
       createdAt: new Date().toISOString()
     };
     if (!this.portalData.messages) this.portalData.messages = [];
     this.portalData.messages.push(msg);
+    const content = this.newMessage.trim();
     this.newMessage = '';
 
     this.api.post<any>(`portal/quotations/${this.token}/message`, {
-      message: msg.message,
-      requestedDiscountPct: null,
-      notes: 'Customer discussion message'
+      senderName: msg.senderName,
+      message: content,
+      counterDiscountPercent: null
     }).subscribe({
       next: () => {},
       error: () => {}
@@ -428,24 +450,30 @@ export class CustomerPortalComponent implements OnInit {
     const newSubtotal = this.portalData.subtotalAmount;
     const newDisc = Math.round(newSubtotal * (discPct / 100));
     this.portalData.totalDiscountAmount = newDisc;
-    this.portalData.totalAmount = (newSubtotal - newDisc) + this.portalData.shippingAmount;
+    this.portalData.totalAmount = (newSubtotal - newDisc) + (this.portalData.shippingAmount || 0);
     this.portalData.status = 'PENDING_APPROVAL';
 
     if (!this.portalData.messages) this.portalData.messages = [];
     this.portalData.messages.push({
       id: Date.now(),
-      senderName: 'Sarah Chen (Zenith Systems)',
+      senderName: 'Sarah Chen (Customer Buyer)',
       senderRole: 'CUSTOMER',
       message: `Submitted counter-discount request: ${discPct}%. Revised proposal amount: ${this.formatCurrency(this.portalData.totalAmount)}.`,
+      displayTime: 'Just now',
       createdAt: new Date().toISOString()
     });
 
+    const firstLineId = this.portalData.lines && this.portalData.lines.length > 0 ? this.portalData.lines[0].lineId : null;
+
     this.api.post<any>(`portal/quotations/${this.token}/message`, {
+      senderName: 'Sarah Chen (Customer Buyer)',
       message: `Counter-offer of ${discPct}% requested`,
-      requestedDiscountPct: discPct,
-      notes: 'Customer counter proposal'
+      counterDiscountPercent: discPct,
+      lineReferenceId: firstLineId
     }).subscribe({
-      next: () => {},
+      next: () => {
+        this.loadPortalData();
+      },
       error: () => {}
     });
 
@@ -454,11 +482,15 @@ export class CustomerPortalComponent implements OnInit {
 
   acceptQuote(): void {
     this.portalData.status = 'CONFIRMED';
-    this.api.post<any>(`portal/quotations/${this.token}/confirm`, {}).subscribe({
-      next: () => {},
-      error: () => {}
+    this.api.post<any>(`portal/quotations/${this.token}/confirm?confirmedBy=${encodeURIComponent('Customer Buyer')}`, {}).subscribe({
+      next: () => {
+        alert('🎉 Commercial terms accepted and confirmed! Order generated and dispatched to fulfillment.');
+        this.loadPortalData();
+      },
+      error: (err) => {
+        alert('Notice: ' + (err.error?.message || 'Terms recorded.'));
+      }
     });
-    alert('🎉 Thank you! Commercial terms accepted and signed. Order Q-2026-1042 confirmed and dispatched to fulfillment.');
   }
 
   formatCurrency(val: number): string {

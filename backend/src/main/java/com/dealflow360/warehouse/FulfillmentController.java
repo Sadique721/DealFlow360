@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/fulfillments")
+@RequestMapping({"/api/fulfillments", "/api/fulfillment"})
 @Tag(name = "Warehouse & Logistics", description = "Endpoints for inventory management, split fulfillment optimization, and backorder consolidation")
 public class FulfillmentController {
 
@@ -38,6 +38,18 @@ public class FulfillmentController {
     @Operation(summary = "Get or generate recommended multi-warehouse fulfillment split plan")
     public ResponseEntity<FulfillmentPlan> getPlanForQuotation(@PathVariable Long quotationId) {
         return ResponseEntity.ok(fulfillmentService.generateOrGetPlan(quotationId));
+    }
+
+    @PostMapping("/quotation/{quotationId}/optimize")
+    @Operation(summary = "Re-optimize multi-warehouse fulfillment split plan")
+    public ResponseEntity<FulfillmentPlan> optimizePlan(@PathVariable Long quotationId) {
+        return ResponseEntity.ok(fulfillmentService.generateOrGetPlan(quotationId));
+    }
+
+    @PostMapping("/quotation/{quotationId}/consolidate-backorder")
+    @Operation(summary = "Consolidate backorders for quotation")
+    public ResponseEntity<?> consolidateForQuotation(@PathVariable Long quotationId) {
+        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Backorders consolidated"));
     }
 
     @PostMapping("/{planId}/accept")

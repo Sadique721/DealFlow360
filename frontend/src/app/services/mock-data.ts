@@ -128,10 +128,10 @@ export function generate120Quotations(): Quotation[] {
           quantity: Math.max(1, (i % 8) * 3),
           unitListPrice: MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].basePrice,
           unitDiscountPct: discPct,
-          unitDiscountAmount: Math.round(MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].basePrice * (discPct / 100)),
-          unitFinalPrice: Math.round(MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].basePrice * (1 - (discPct / 100))),
-          lineTotal: Math.round(MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].basePrice * (1 - (discPct / 100)) * Math.max(1, (i % 8) * 3)),
-          lineCost: MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].unitCost * Math.max(1, (i % 8) * 3),
+          unitDiscountAmount: Math.round((MOCK_PRODUCTS[i % MOCK_PRODUCTS.length]?.basePrice || 1000) * (discPct / 100)),
+          unitFinalPrice: Math.round((MOCK_PRODUCTS[i % MOCK_PRODUCTS.length]?.basePrice || 1000) * (1 - (discPct / 100))),
+          lineTotal: Math.round((MOCK_PRODUCTS[i % MOCK_PRODUCTS.length]?.basePrice || 1000) * (1 - (discPct / 100)) * Math.max(1, (i % 8) * 3)),
+          lineCost: (MOCK_PRODUCTS[i % MOCK_PRODUCTS.length]?.unitCost || 500) * Math.max(1, (i % 8) * 3),
           lineMarginPct: margin
         }
       ]
@@ -143,37 +143,40 @@ export function generate120Quotations(): Quotation[] {
 
 // Generate 120 Approval Requests
 export function generate120Approvals(quotes: Quotation[]): ApprovalRequest[] {
-  return quotes.slice(0, 120).map((q, idx) => ({
-    id: idx + 1,
-    quotation: q,
-    status: q.status === 'PENDING_APPROVAL' ? 'PENDING' : q.status === 'APPROVED' ? 'APPROVED' : 'PENDING',
-    currentLevel: q.blendedDiscountPct > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
-    maxLevel: q.blendedDiscountPct > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
-    requiredTier: q.blendedDiscountPct > 15 ? 'VP & CFO Sign-off' : 'Sales Manager Sign-off',
-    culpritLineBreakdownJson: JSON.stringify([
-      {
-        productName: q.lines[0]?.product.name || 'Ground Gateway 4U',
-        lineTotal: q.totalAmount,
-        revenueWeightPct: 65.4,
-        appliedDiscountPct: q.blendedDiscountPct,
-        allowedThresholdPct: 15.0,
-        overagePct: Math.max(0, q.blendedDiscountPct - 15.0),
-        weightedContribution: Number((Math.max(0, q.blendedDiscountPct - 15.0) * 0.654).toFixed(2))
-      }
-    ]),
-    steps: [
-      {
-        id: (idx * 2) + 1,
-        level: 'LEVEL_1',
-        approverRole: 'SALES_MANAGER',
-        approver: SALES_REPS[2],
-        status: q.status === 'APPROVED' ? 'APPROVED' : 'PENDING',
-        stepOrder: 1,
-        slaDeadline: '2026-09-06T18:00:00Z',
-        comments: q.blendedDiscountPct > 10 ? 'Discount over category cap; requires VP concurrence.' : 'Within standard discretion.'
-      }
-    ]
-  }));
+  return quotes.slice(0, 120).map((q, idx) => {
+    const disc = q.blendedDiscountPct || 0;
+    return {
+      id: idx + 1,
+      quotation: q,
+      status: q.status === 'PENDING_APPROVAL' ? 'PENDING' : q.status === 'APPROVED' ? 'APPROVED' : 'PENDING',
+      currentLevel: disc > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
+      maxLevel: disc > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
+      requiredTier: disc > 15 ? 'VP & CFO Sign-off' : 'Sales Manager Sign-off',
+      culpritLineBreakdownJson: JSON.stringify([
+        {
+          productName: q.lines[0]?.product?.name || 'Ground Gateway 4U',
+          lineTotal: q.totalAmount,
+          revenueWeightPct: 65.4,
+          appliedDiscountPct: disc,
+          allowedThresholdPct: 15.0,
+          overagePct: Math.max(0, disc - 15.0),
+          weightedContribution: Number((Math.max(0, disc - 15.0) * 0.654).toFixed(2))
+        }
+      ]),
+      steps: [
+        {
+          id: (idx * 2) + 1,
+          level: 'LEVEL_1',
+          approverRole: 'SALES_MANAGER',
+          approver: SALES_REPS[2],
+          status: q.status === 'APPROVED' ? 'APPROVED' : 'PENDING',
+          stepOrder: 1,
+          slaDeadline: '2026-09-06T18:00:00Z',
+          comments: disc > 10 ? 'Discount over category cap; requires VP concurrence.' : 'Within standard discretion.'
+        }
+      ]
+    };
+  });
 }
 
 // Generate 120 Fulfillment Inventory Splits
@@ -216,14 +219,15 @@ export function generate120HealthFlags(quotes: Quotation[]): DealHealthFlag[] {
     const sev = severities[idx % severities.length];
     const zScore = Number((1.8 + ((idx % 15) * 0.18)).toFixed(2));
     const days = 6 + (idx % 14);
+    const tierName = typeof q.customer.tier === 'string' ? q.customer.tier : (q.customer.tier?.tierName || 'Enterprise Gold');
 
     let desc = '';
     if (fType === 'STATISTICAL_DISCOUNT_OUTLIER') {
-      desc = `Discount of ${q.blendedDiscountPct}% is ${zScore} standard deviations above median cohort for ${q.customer.tier.tierName}.`;
+      desc = `Discount of ${q.blendedDiscountPct}% is ${zScore} standard deviations above median cohort for ${tierName}.`;
     } else if (fType === 'STAGE_RESIDENCE_STALL') {
       desc = `Opportunity has been stagnant in ${q.status.replace('_', ' ')} stage for ${days} days (> 7 days SLA target).`;
     } else if (fType === 'MARGIN_DECAY_ANOMALY') {
-      desc = `Net gross margin of ${q.marginPct}% severely undercuts the ${q.customer.tier.tierName} target baseline of 35.0%.`;
+      desc = `Net gross margin of ${q.marginPct}% severely undercuts the ${tierName} target baseline of 35.0%.`;
     } else {
       desc = `Approval SLA threshold breached by ${idx * 4} minutes. Executive desk notification automatically routed.`;
     }
@@ -260,12 +264,13 @@ export function generate120Subscriptions(quotes: Quotation[]): SubscriptionContr
     const acv = plan.freq === 'ANNUAL' ? mrr * 12 : mrr * 12;
     const status = statuses[idx % statuses.length];
     const prorationDelta = status === 'PENDING_PRORATION' ? Math.round(((idx % 8) + 3) * plan.price * (14 / 30)) : 0;
+    const custTier = typeof q.customer.tier === 'string' ? q.customer.tier : (q.customer.tier?.tierName || 'Enterprise Gold');
 
     return {
       id: idx + 1,
       contractNumber: `SUB-${2026}-${String(5000 + idx + 1).padStart(4, '0')}`,
       customerName: q.customer.name,
-      customerTier: q.customer.tier?.tierName || 'Enterprise Gold',
+      customerTier: custTier,
       planName: plan.name,
       billingFrequency: plan.freq as any,
       seatsCount: seats,

@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/reports")
+@RequestMapping({"/api/reports", "/api/reporting"})
 @Tag(name = "Reporting & Analytics", description = "Endpoints for executive dashboards, revenue KPIs, and exportable reports")
 public class ReportingController {
 
@@ -20,7 +20,7 @@ public class ReportingController {
         this.reportingService = reportingService;
     }
 
-    @GetMapping("/kpis")
+    @GetMapping({"/kpis", "/dashboard"})
     @Operation(summary = "Get executive sales performance KPIs and governance metrics")
     public ResponseEntity<Map<String, Object>> getKpis(
             @RequestParam(required = false, defaultValue = "all") String period,

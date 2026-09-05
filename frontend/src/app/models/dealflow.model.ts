@@ -8,7 +8,7 @@ export interface User {
 }
 
 export interface CustomerTier {
-  id: number;
+  id?: number;
   tierName: string;
   code?: string;
   minAnnualSpend?: number;
@@ -28,7 +28,13 @@ export interface Customer {
   phone?: string;
   shippingAddress?: string;
   destinationRegion?: string;
-  tier: CustomerTier;
+  tier: CustomerTier | string;
+}
+
+export function getCustomerTierName(customer?: Customer | null): string {
+  if (!customer || !customer.tier) return 'STANDARD';
+  if (typeof customer.tier === 'string') return customer.tier;
+  return customer.tier.tierName || 'STANDARD';
 }
 
 export interface Category {
@@ -43,28 +49,38 @@ export interface Product {
   id: number;
   name: string;
   sku: string;
-  type: 'HARDWARE' | 'SOFTWARE_SUBSCRIPTION' | 'SERVICE' | 'SUBSCRIPTION' | string;
+  type?: 'HARDWARE' | 'SOFTWARE_SUBSCRIPTION' | 'SERVICE' | 'SUBSCRIPTION' | string;
   basePrice: number;
+  costPrice?: number;
   unitCost: number;
   weightKg?: number;
-  category: Category;
+  category?: Category;
   billingFrequency?: string;
   prorationUnit?: string;
+  isSubscription?: boolean;
 }
 
 export interface QuotationLine {
   id?: number;
   product: Product;
   quantity: number;
+  unitPrice?: number;
   unitListPrice: number;
+  discountPercent?: number;
   unitDiscountPct: number;
+  discountAmount?: number;
   unitDiscountAmount: number;
   unitFinalPrice: number;
   lineTotal: number;
+  costPrice?: number;
   lineCost: number;
+  marginAmount?: number;
   lineMarginPct: number;
+  lineType?: string;
   requiresLineApproval?: boolean;
   approvalReason?: string;
+  overagePoints?: number;
+  status?: string;
 }
 
 export interface Quotation {
@@ -79,14 +95,21 @@ export interface Quotation {
   shippingAmount?: number;
   taxAmount?: number;
   totalAmount: number;
+  totalCost?: number;
   totalCostAmount?: number;
+  totalMarginAmount?: number;
   marginPct: number;
+  marginPercentage?: number;
   riskScore: number;
+  blendedRiskScore?: number;
   riskSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
   requiresManagerApproval?: boolean;
   requiresFinanceApproval?: boolean;
   promisedDeliveryDate?: string;
   portalAccessToken?: string;
+  portalToken?: string;
+  version?: number;
+  lastActivityAt?: string;
   lines: QuotationLine[];
   createdAt?: string;
   updatedAt?: string;
@@ -119,7 +142,7 @@ export interface ApprovalStep {
   level: string;
   approverRole: string;
   approver?: User;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'MODIFICATION_REQUESTED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'MODIFICATION_REQUESTED' | 'RETURNED';
   stepOrder: number;
   slaDeadline?: string;
   comments?: string;
@@ -129,9 +152,10 @@ export interface ApprovalStep {
 export interface ApprovalRequest {
   id: number;
   quotation: Quotation;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'MODIFICATION_REQUESTED';
-  currentLevel: string;
-  maxLevel: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'MODIFICATION_REQUESTED' | 'RETURNED';
+  currentLevel?: string;
+  currentStage?: string;
+  maxLevel?: string;
   culpritLineBreakdownJson?: string;
   steps: ApprovalStep[];
   requiredTier?: string;
@@ -141,32 +165,44 @@ export interface Warehouse {
   id: number;
   name: string;
   code: string;
-  locationCity: string;
+  locationCity?: string;
+  city?: string;
   region: string;
-  baseFreightCost: number;
-  weightRatePerKg: number;
+  baseFreightCost?: number;
+  baseFreight?: number;
+  weightRatePerKg?: number;
+  shippingCostWeight?: number;
   leadTimeDays: number;
 }
 
 export interface FulfillmentSplit {
   id: number;
+  quotationId?: number;
   warehouse: Warehouse;
-  productId: number;
-  productName: string;
-  allocatedQuantity: number;
-  backorderedQuantity: number;
-  estimatedFreightCost: number;
-  leadTimeDays: number;
-  status: 'ALLOCATED' | 'BACKORDERED' | 'DISPATCHED' | 'DELIVERED';
+  product?: Product;
+  productId?: number;
+  productName?: string;
+  quantity?: number;
+  allocatedQuantity?: number;
+  backorderedQuantity?: number;
+  isBackorder?: boolean;
+  estimatedCost?: number;
+  estimatedFreightCost?: number;
+  leadTimeDays?: number;
+  shipmentGroup?: string;
+  status: 'ALLOCATED' | 'BACKORDERED' | 'DISPATCHED' | 'DELIVERED' | 'SHIPPED' | string;
 }
 
 export interface FulfillmentPlan {
   id: number;
   quotationId: number;
-  status: 'OPTIMIZED' | 'PARTIALLY_ALLOCATED' | 'FULFILLED';
-  totalFreightCost: number;
-  totalLeadTimeDays: number;
-  allLinesSatisfied: boolean;
+  status: 'OPTIMIZED' | 'PARTIALLY_ALLOCATED' | 'FULFILLED' | 'ACCEPTED' | 'OVERRIDDEN' | string;
+  totalFreightCost?: number;
+  totalCost?: number;
+  totalLeadTimeDays?: number;
+  allLinesSatisfied?: boolean;
+  hasBackorder?: boolean;
+  summaryText?: string;
   splits: FulfillmentSplit[];
 }
 
@@ -198,29 +234,67 @@ export interface UpsellSuggestion {
   recommendedProduct?: Product;
   suggestedProduct?: Product;
   benefitDescription?: string;
+  promoTag?: string;
+  promoDiscountPercent?: number;
   discountOverridePct?: number;
   discountPct?: number;
   revenueImpact?: number;
   projectedRevenueIncrease?: number;
   marginImpactPct?: number;
+  marginDelta?: number;
+  simulatedNewMarginPercentage?: number;
+  coPurchaseScore?: number;
+  rationale?: string;
   explanation?: string;
+}
+
+export interface Invoice {
+  id: number;
+  invoiceNumber: string;
+  quotation?: Quotation;
+  quotationId?: number;
+  customer?: Customer;
+  customerName?: string;
+  invoiceType: 'ONE_TIME' | 'RECURRING' | 'CREDIT_NOTE' | string;
+  amount: number;
+  status: 'UNPAID' | 'PAID' | 'VOID' | string;
+  dueDate: string;
+  paidAt?: string;
+  deliveryStatus: 'ORDER_CONFIRMED' | 'SHIPPED' | 'INVOICED' | 'PAID' | string;
+  createdAt: string;
+}
+
+export interface Subscription {
+  id: number;
+  customer: Customer;
+  quotation: Quotation;
+  quotationLineId?: number;
+  planName: string;
+  cycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | string;
+  startDate: string;
+  nextBillDate: string;
+  amount: number;
+  quantity: number;
+  status: 'ACTIVE' | 'PAUSED' | 'CANCELED' | string;
+  schedules?: any[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SubscriptionContract {
   id: number;
-  contractNumber: string;
+  contractNumber?: string;
   customerName: string;
-  customerTier: string;
+  customerTier?: string;
   planName: string;
-  billingFrequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+  billingFrequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | string;
   seatsCount: number;
   unitSeatPrice: number;
   monthlyRecurringRevenue: number;
   annualContractValue: number;
   startDate: string;
   nextRenewalDate: string;
-  status: 'ACTIVE' | 'PENDING_PRORATION' | 'RENEWING' | 'IN_GRACE' | 'CANCELLED';
-  prorationAmountAvailable: number;
+  status: 'ACTIVE' | 'PENDING_PRORATION' | 'RENEWING' | 'IN_GRACE' | 'CANCELLED' | string;
+  prorationAmountAvailable?: number;
   creditNoteId?: string;
 }
-

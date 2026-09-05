@@ -67,9 +67,11 @@ public class AnomalyDetectionService {
         for (Quotation q : stalled) {
             Optional<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "STALLED");
             if (existing.isEmpty()) {
-                long days = java.time.Duration.between(q.getLastActivityAt(), LocalDateTime.now()).toDays();
+                LocalDateTime lastAct = q.getLastActivityAt() != null ? q.getLastActivityAt() : (q.getCreatedAt() != null ? q.getCreatedAt() : LocalDateTime.now());
+                long days = java.time.Duration.between(lastAct, LocalDateTime.now()).toDays();
+                String custName = q.getCustomer() != null ? q.getCustomer().getName() : "Customer";
                 String desc = String.format("Quotation %s for %s has been inactive for %d days (stage: %s). Exceeds %d-day stall threshold.",
-                        q.getQuoteNumber(), q.getCustomer().getName(), days, q.getStatus(), stallThresholdDays);
+                        q.getQuoteNumber(), custName, days, q.getStatus(), stallThresholdDays);
 
                 DealHealthFlag flag = DealHealthFlag.builder()
                         .quotation(q)
@@ -100,11 +102,11 @@ public class AnomalyDetectionService {
         List<Quotation> activeQuotes = quotationRepository.findAll();
 
         for (Quotation q : activeQuotes) {
-            if ("CONFIRMED".equalsIgnoreCase(q.getStatus()) || "REJECTED".equalsIgnoreCase(q.getStatus())) {
+            if ("CONFIRMED".equalsIgnoreCase(q.getStatus()) || "REJECTED".equalsIgnoreCase(q.getStatus()) || q.getSalesRep() == null) {
                 continue;
             }
 
-            BigDecimal currentTotalDiscount = q.getSubtotalAmount().compareTo(BigDecimal.ZERO) > 0
+            BigDecimal currentTotalDiscount = q.getSubtotalAmount() != null && q.getSubtotalAmount().compareTo(BigDecimal.ZERO) > 0 && q.getTotalDiscountAmount() != null
                     ? q.getTotalDiscountAmount().divide(q.getSubtotalAmount(), 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
                     : BigDecimal.ZERO;
 
@@ -117,7 +119,7 @@ public class AnomalyDetectionService {
             List<Double> historicalDiscounts = new ArrayList<>();
 
             for (Quotation cd : confirmedDeals) {
-                if (cd.getSubtotalAmount().compareTo(BigDecimal.ZERO) > 0) {
+                if (cd.getSubtotalAmount() != null && cd.getSubtotalAmount().compareTo(BigDecimal.ZERO) > 0 && cd.getTotalDiscountAmount() != null) {
                     double disc = cd.getTotalDiscountAmount().divide(cd.getSubtotalAmount(), 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
                     historicalDiscounts.add(disc);
                 }
@@ -136,8 +138,9 @@ public class AnomalyDetectionService {
                 if (z >= zScoreThreshold || currentTotalDiscount.doubleValue() >= mean * anomalyMultiplier) {
                     Optional<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "DISCOUNT_ANOMALY");
                     if (existing.isEmpty()) {
+                        String repName = q.getSalesRep() != null ? q.getSalesRep().getName() : "Representative";
                         String desc = String.format("Sales Rep %s applied %.2f%% discount on %s. Rep historical confirmed average is %.2f%% (Z-score = %.2f >= %.1f). Atypical discounting pattern detected.",
-                                q.getSalesRep().getName(), currentTotalDiscount.doubleValue(), q.getQuoteNumber(), mean, z, zScoreThreshold);
+                                repName, currentTotalDiscount.doubleValue(), q.getQuoteNumber(), mean, z, zScoreThreshold);
 
                         DealHealthFlag flag = DealHealthFlag.builder()
                                 .quotation(q)
@@ -232,7 +235,12 @@ public class AnomalyDetectionService {
         DealHealthFlag flag = flagRepository.findById(flagId)
                 .orElseThrow(() -> new RuntimeException("Flag not found: " + flagId));
 
-        flag.setActionTaken("Automated nudge sent to rep " + flag.getQuotation().getSalesRep().getName());
+        String repName = (flag.getQuotation() != null && flag.getQuotation().getSalesRep() != null)
+                ? flag.getQuotation().getSalesRep().getName() : "Representative";
+        String repEmail = (flag.getQuotation() != null && flag.getQuotation().getSalesRep() != null)
+                ? flag.getQuotation().getSalesRep().getEmail() : "representative@dealflow360.com";
+
+        flag.setActionTaken("Automated nudge sent to rep " + repName);
         flagRepository.save(flag);
 
         auditService.log("DEAL_HEALTH", flag.getQuotation().getId(), "NUDGE_SENT", "Manager Dashboard",
@@ -240,7 +248,7 @@ public class AnomalyDetectionService {
 
         return Map.of(
                 "success", true,
-                "message", "Nudge notification dispatched to " + flag.getQuotation().getSalesRep().getEmail(),
+                "message", "Nudge notification dispatched to " + repEmail,
                 "flagId", flagId
         );
     }

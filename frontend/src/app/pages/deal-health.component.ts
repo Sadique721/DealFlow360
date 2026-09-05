@@ -136,13 +136,13 @@ import { Subscription } from 'rxjs';
                     <span class="mono text-cyan font-bold">ALT-{{ 2026 }}-{{ f.id }}</span>
                   </td>
                   <td>
-                    <a [routerLink]="['/quote', f.quotation.id]" class="mono font-bold text-cyan" style="text-decoration: underline;">
+                    <a [routerLink]="['/dashboard/quote', f.quotation.id]" class="mono font-bold text-cyan" style="text-decoration: underline;">
                       {{ f.quotation.quoteNumber }}
                     </a>
                   </td>
                   <td>
                     <strong>{{ f.quotation.customer.name }}</strong>
-                    <div class="text-muted" style="font-size: 11px;">Tier: {{ f.quotation.customer.tier.tierName }}</div>
+                    <div class="text-muted" style="font-size: 11px;">Tier: {{ getTierName(f.quotation.customer.tier) }}</div>
                   </td>
                   <td>{{ f.quotation.salesRep.name }}</td>
                   <td>
@@ -592,5 +592,11 @@ export class DealHealthComponent implements OnInit, OnDestroy {
 
   formatCurrency(val: number): string {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0);
+  }
+
+  getTierName(tier: any): string {
+    if (!tier) return 'STANDARD';
+    if (typeof tier === 'string') return tier;
+    return tier.tierName || 'STANDARD';
   }
 }

@@ -30,7 +30,7 @@ public class ApprovalController {
      * - FINANCE: see only STAGE_2_FINANCE steps
      * - SALES_REP: 403 — they cannot view the approval queue
      */
-    @GetMapping
+    @GetMapping({"", "/pending"})
     @PreAuthorize("hasAnyRole('ADMIN','SALES_MANAGER','FINANCE')")
     @Operation(summary = "List pending approval requests (ADMIN/SALES_MANAGER/FINANCE only)")
     public ResponseEntity<List<ApprovalRequest>> listPendingApprovals() {
@@ -75,5 +75,30 @@ public class ApprovalController {
                 : User.builder().name("Manager").role("SALES_MANAGER").build();
 
         return ResponseEntity.ok(approvalService.actOnApproval(actionRequest, approver));
+    }
+
+    @PostMapping("/{id}/action")
+    @PreAuthorize("hasAnyRole('ADMIN','SALES_MANAGER','FINANCE')")
+    @Operation(summary = "Execute approval action by quotation ID")
+    public ResponseEntity<ApprovalRequest> actOnApprovalById(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            @AuthenticationPrincipal AuthUser authUser) {
+
+        String action = (String) body.get("action");
+        String comments = (String) body.get("comments");
+        Long stepId = body.get("stepId") != null ? Long.valueOf(body.get("stepId").toString()) : null;
+
+        ApprovalActionRequest req = new ApprovalActionRequest();
+        req.setQuotationId(id);
+        req.setAction(action);
+        req.setComments(comments);
+        req.setStepId(stepId);
+
+        User approver = authUser != null
+                ? authUser.getUser()
+                : User.builder().name("Manager").role("SALES_MANAGER").build();
+
+        return ResponseEntity.ok(approvalService.actOnApproval(req, approver));
     }
 }
