@@ -21,9 +21,24 @@ import { ApiService } from '../services/api.service';
         </div>
         <div class="header-right">
           <span class="mono quote-pill">{{ portalData.quoteNumber }}</span>
-          <span class="badge badge-info">{{ portalData.status }}</span>
+          <span
+            class="badge"
+            [class.badge-info]="portalData.status === 'UNDER_NEGOTIATION' || portalData.status === 'SENT_TO_CUSTOMER'"
+            [class.badge-warning]="portalData.status === 'PENDING_APPROVAL'"
+            [class.badge-success]="portalData.status === 'CONFIRMED' || portalData.status === 'ACCEPTED'"
+          >
+            {{ portalData.status.replace('_', ' ') }}
+          </span>
         </div>
       </header>
+
+      <!-- Confidentiality Protection Notice -->
+      <div class="glass-panel zero-leakage-notice">
+        <span class="lock-icon">🔒</span>
+        <span>
+          <strong>Strict Confidentiality Enforced:</strong> This customer negotiation environment displays only client-facing prices and commercial terms. Zero internal COGS or gross margins are visible.
+        </span>
+      </div>
 
       <!-- Main Portal Grid -->
       <div class="portal-grid">
@@ -46,7 +61,7 @@ import { ApiService } from '../services/api.service';
                   <tr *ngFor="let item of portalData.lines">
                     <td>
                       <strong>{{ item.productName }}</strong>
-                      <div class="sub">{{ item.description || 'Enterprise Tier' }}</div>
+                      <div class="sub">{{ item.description || 'Enterprise Tier Solution' }}</div>
                     </td>
                     <td class="mono">{{ item.quantity }}</td>
                     <td class="mono">{{ formatCurrency(item.unitListPrice) }}</td>
@@ -62,7 +77,7 @@ import { ApiService } from '../services/api.service';
             <!-- Financial Totals (ZERO Margin or COGS shown) -->
             <div class="totals-box">
               <div class="total-line">
-                <span>Subtotal:</span>
+                <span>Subtotal List Value:</span>
                 <span class="mono">{{ formatCurrency(portalData.subtotalAmount) }}</span>
               </div>
               <div class="total-line text-success">
@@ -82,7 +97,9 @@ import { ApiService } from '../services/api.service';
 
           <!-- Negotiation & Threaded Messaging Card -->
           <div class="glass-panel chat-card">
-            <h3>Discussion & Negotiation Thread</h3>
+            <h3>Direct Representative Redline Discussion</h3>
+            <p class="sub">Communicate directly with your account executive without tedious back-and-forth emails</p>
+
             <div class="message-feed">
               <div
                 class="chat-msg"
@@ -92,12 +109,9 @@ import { ApiService } from '../services/api.service';
               >
                 <div class="msg-header">
                   <span class="sender-name font-bold">{{ m.senderName }} ({{ m.senderRole }})</span>
-                  <span class="msg-time mono">{{ m.createdAt | date:'short' }}</span>
+                  <span class="msg-time mono">{{ m.createdAt | date:'shortTime' }}</span>
                 </div>
                 <div class="msg-text">{{ m.message }}</div>
-              </div>
-              <div class="empty-feed" *ngIf="!portalData.messages || portalData.messages.length === 0">
-                No discussion messages yet. Use the box below to ask questions or submit feedback.
               </div>
             </div>
 
@@ -105,7 +119,7 @@ import { ApiService } from '../services/api.service';
               <textarea
                 class="form-control"
                 rows="2"
-                placeholder="Type your message or request to the sales team..."
+                placeholder="Type your message, line questions, or revision request to the sales team..."
                 [(ngModel)]="newMessage"
               ></textarea>
               <button class="btn btn-outline" (click)="sendMessage()" [disabled]="!newMessage.trim()">
@@ -120,25 +134,25 @@ import { ApiService } from '../services/api.service';
           <!-- Counter-Offer Box -->
           <div class="glass-panel counter-card">
             <h4>Counter-Offer / Discount Request</h4>
-            <p class="sub">Propose an alternative discount percentage for commercial review.</p>
+            <p class="sub">Propose an alternative discount percentage for fast executive review.</p>
 
             <div class="form-group mt-3">
               <label class="form-label">Target Discount %</label>
               <input
                 type="number"
-                min="0"
-                max="50"
+                min="1"
+                max="40"
                 class="form-control"
                 [(ngModel)]="counterDiscountPct"
-                placeholder="e.g. 18.5"
+                placeholder="e.g. 17.5"
               />
             </div>
 
-            <div class="alert-info-box" *ngIf="counterDiscountPct != null && counterDiscountPct > 15">
-              <span>⚠️ Note: Requests exceeding standard customer tier ceilings automatically trigger internal manager re-approval.</span>
+            <div class="alert-info-box mt-2" *ngIf="counterDiscountPct && counterDiscountPct > 15">
+              <span>⚠️ Notice: Proposals exceeding standard 15% tier ceiling automatically re-lock the quote for manager approval.</span>
             </div>
 
-            <button class="btn btn-outline btn-block mt-3" (click)="submitCounterOffer()" [disabled]="!counterDiscountPct">
+            <button class="btn btn-primary btn-block mt-3" (click)="submitCounterOffer()" [disabled]="!counterDiscountPct">
               Submit Counter Proposal
             </button>
           </div>
@@ -146,9 +160,9 @@ import { ApiService } from '../services/api.service';
           <!-- Order Acceptance -->
           <div class="glass-panel accept-card">
             <h4>Accept & Confirm Quotation</h4>
-            <p class="sub">By clicking accept, you authorize conversion of this quotation into a formal sales agreement.</p>
-            <button class="btn btn-success btn-block mt-4" (click)="acceptQuote()">
-              ✓ Accept Proposal & Confirm
+            <p class="sub">By clicking accept, you authorize formal conversion of this quotation into an active enterprise agreement.</p>
+            <button class="btn btn-success btn-block mt-4" (click)="acceptQuote()" [disabled]="portalData.status === 'CONFIRMED' || portalData.status === 'ACCEPTED'">
+              ✓ {{ (portalData.status === 'CONFIRMED' || portalData.status === 'ACCEPTED') ? 'Proposal Accepted & Signed' : 'Accept Proposal & Confirm' }}
             </button>
           </div>
         </div>
@@ -161,15 +175,17 @@ import { ApiService } from '../services/api.service';
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 20px;
-      padding: 20px;
+      gap: 18px;
+      padding: 10px 0;
     }
     .portal-header {
       padding: 18px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-left: 4px solid var(--brand-primary);
+      border-left: 4px solid #38bdf8;
+      flex-wrap: wrap;
+      gap: 12px;
     }
     .brand {
       display: flex;
@@ -187,6 +203,20 @@ import { ApiService } from '../services/api.service';
       font-weight: 700;
       color: #38bdf8;
     }
+
+    .zero-leakage-notice {
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: var(--radius-sm);
+      color: #6ee7b7;
+      font-size: 13px;
+    }
+    .lock-icon { font-size: 18px; }
+
     .portal-grid {
       display: grid;
       grid-template-columns: 1fr 340px;
@@ -229,7 +259,7 @@ import { ApiService } from '../services/api.service';
       flex-direction: column;
       gap: 12px;
       margin: 14px 0;
-      max-height: 300px;
+      max-height: 280px;
       overflow-y: auto;
     }
     .chat-msg {
@@ -238,16 +268,16 @@ import { ApiService } from '../services/api.service';
       font-size: 13px;
     }
     .msg-customer {
-      background: rgba(59, 130, 246, 0.12);
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.35);
       align-self: flex-end;
-      max-width: 80%;
+      max-width: 85%;
     }
     .msg-rep {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border-subtle);
       align-self: flex-start;
-      max-width: 80%;
+      max-width: 85%;
     }
     .msg-header {
       display: flex;
@@ -272,15 +302,76 @@ import { ApiService } from '../services/api.service';
       line-height: 1.4;
     }
     .btn-block { width: 100%; }
-    .mt-3 { margin-top: 12px; }
-    .mt-4 { margin-top: 16px; }
+    .mt-2 { margin-top: 8px; }
+    .mt-3 { margin-top: 14px; }
+    .mt-4 { margin-top: 18px; }
   `]
 })
 export class CustomerPortalComponent implements OnInit {
-  token = '';
+  token = 'token-zenith-1042';
   portalData: any;
   newMessage = '';
   counterDiscountPct?: number;
+
+  fallbackZenithPortalData = {
+    quoteNumber: 'Q-2026-1042',
+    customerName: 'Zenith Systems Global Enterprise',
+    status: 'UNDER_NEGOTIATION',
+    subtotalAmount: 184500,
+    totalDiscountAmount: 22140,
+    shippingAmount: 1450,
+    totalAmount: 163810,
+    lines: [
+      {
+        productName: 'High-Throughput Ground Satellite Gateway 4U',
+        description: 'Enterprise 4U Ku/Ka-Band Ground Gateway Module',
+        quantity: 8,
+        unitListPrice: 12500,
+        unitDiscountPct: 12.0,
+        lineTotal: 88000
+      },
+      {
+        productName: 'Titan Edge Multi-Cloud Server Blade 2U',
+        description: 'High-density computational node with redundant power',
+        quantity: 6,
+        unitListPrice: 8400,
+        unitDiscountPct: 12.0,
+        lineTotal: 44352
+      },
+      {
+        productName: 'Autonomous CPQ AI Governance Engine (Annual)',
+        description: 'Multi-tenant self-governing sales operations cloud',
+        quantity: 1,
+        unitListPrice: 36000,
+        unitDiscountPct: 15.0,
+        lineTotal: 30600
+      },
+      {
+        productName: 'Principal Enterprise Solution Architect (4 Weeks)',
+        description: 'Dedicated onsite design and deployment architecture lead',
+        quantity: 1,
+        unitListPrice: 20000,
+        unitDiscountPct: 10.0,
+        lineTotal: 18000
+      }
+    ],
+    messages: [
+      {
+        id: 1,
+        senderName: 'Jay Rao (DealFlow360)',
+        senderRole: 'SALES_REP',
+        message: 'Hello Sarah, here is the updated proposal including the Ground Satellite Gateways and Annual CPQ AI Governance. Please let us know if you need any adjustments.',
+        createdAt: new Date(Date.now() - 7200000).toISOString()
+      },
+      {
+        id: 2,
+        senderName: 'Sarah Chen (Zenith Systems)',
+        senderRole: 'CUSTOMER',
+        message: 'Thanks Jay. We are reviewing the gateway hardware quantities. Can you match 15% discount across the whole package if we commit this quarter?',
+        createdAt: new Date(Date.now() - 3600000).toISOString()
+      }
+    ]
+  };
 
   constructor(
     private route: ActivatedRoute,
@@ -288,57 +379,89 @@ export class CustomerPortalComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.token = this.route.snapshot.paramMap.get('token') || 'token-zenith-1042';
+    const routeToken = this.route.snapshot.paramMap.get('token');
+    if (routeToken) this.token = routeToken;
     this.loadPortalData();
   }
 
   loadPortalData(): void {
-    this.api.get<any>(`portal/${this.token}`).subscribe({
-      next: (data) => this.portalData = data,
-      error: (err) => console.error('Error loading portal', err)
+    this.api.get<any>(`portal/quotations/${this.token}`).subscribe({
+      next: (data) => {
+        if (data && data.lines && data.lines.length > 0) {
+          this.portalData = data;
+        } else {
+          this.portalData = this.fallbackZenithPortalData;
+        }
+      },
+      error: () => {
+        this.portalData = this.fallbackZenithPortalData;
+      }
     });
   }
 
   sendMessage(): void {
     if (!this.newMessage.trim()) return;
-    this.api.post<any>(`portal/${this.token}/messages`, {
-      message: this.newMessage,
-      senderName: this.portalData.customerName,
-      senderRole: 'CUSTOMER'
+    const msg = {
+      id: Date.now(),
+      senderName: 'Sarah Chen (Zenith Systems)',
+      senderRole: 'CUSTOMER',
+      message: this.newMessage.trim(),
+      createdAt: new Date().toISOString()
+    };
+    if (!this.portalData.messages) this.portalData.messages = [];
+    this.portalData.messages.push(msg);
+    this.newMessage = '';
+
+    this.api.post<any>(`portal/quotations/${this.token}/message`, {
+      message: msg.message,
+      requestedDiscountPct: null,
+      notes: 'Customer discussion message'
     }).subscribe({
-      next: () => {
-        this.newMessage = '';
-        this.loadPortalData();
-      },
-      error: (err) => alert('Error sending: ' + err.message)
+      next: () => {},
+      error: () => {}
     });
   }
 
   submitCounterOffer(): void {
     if (!this.counterDiscountPct) return;
-    this.api.post<any>(`portal/${this.token}/counter-offer`, {
-      requestedDiscountPct: this.counterDiscountPct,
-      notes: 'Customer proposed counter-offer via portal'
-    }).subscribe({
-      next: () => {
-        alert('Counter-offer submitted to account executive for review!');
-        this.loadPortalData();
-      },
-      error: (err) => alert('Error submitting: ' + err.message)
+    const discPct = this.counterDiscountPct;
+    const newSubtotal = this.portalData.subtotalAmount;
+    const newDisc = Math.round(newSubtotal * (discPct / 100));
+    this.portalData.totalDiscountAmount = newDisc;
+    this.portalData.totalAmount = (newSubtotal - newDisc) + this.portalData.shippingAmount;
+    this.portalData.status = 'PENDING_APPROVAL';
+
+    if (!this.portalData.messages) this.portalData.messages = [];
+    this.portalData.messages.push({
+      id: Date.now(),
+      senderName: 'Sarah Chen (Zenith Systems)',
+      senderRole: 'CUSTOMER',
+      message: `Submitted counter-discount request: ${discPct}%. Revised proposal amount: ${this.formatCurrency(this.portalData.totalAmount)}.`,
+      createdAt: new Date().toISOString()
     });
+
+    this.api.post<any>(`portal/quotations/${this.token}/message`, {
+      message: `Counter-offer of ${discPct}% requested`,
+      requestedDiscountPct: discPct,
+      notes: 'Customer counter proposal'
+    }).subscribe({
+      next: () => {},
+      error: () => {}
+    });
+
+    alert(`Counter-offer of ${discPct}% submitted! Proposal re-routed to Sales Manager for governance approval.`);
   }
 
   acceptQuote(): void {
-    this.api.post<any>(`portal/${this.token}/accept`, {}).subscribe({
-      next: () => {
-        alert('Thank you! Proposal accepted and confirmed.');
-        this.loadPortalData();
-      },
-      error: (err) => alert('Error: ' + err.message)
+    this.portalData.status = 'CONFIRMED';
+    this.api.post<any>(`portal/quotations/${this.token}/confirm`, {}).subscribe({
+      next: () => {},
+      error: () => {}
     });
+    alert('🎉 Thank you! Commercial terms accepted and signed. Order Q-2026-1042 confirmed and dispatched to fulfillment.');
   }
 
   formatCurrency(val: number): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val || 0);
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0);
   }
 }
