@@ -12,10 +12,11 @@ import {
   Customer,
   PriceList,
   LineItemRequest,
+  QuotationCreateRequest,
   UpsellSuggestion
 } from '../models/dealflow.model';
 import { Subscription, forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, timeout } from 'rxjs/operators';
 
 @Component({
   selector: 'app-quote-builder',
@@ -89,7 +90,7 @@ import { catchError } from 'rxjs/operators';
               *ngIf="isEditable && currentRole !== 'CUSTOMER'"
               class="btn btn-success btn-sm"
               (click)="saveDraft()"
-              [disabled]="isSaving || (!isCreateMode && lines.length === 0)"
+              [disabled]="isSaving || isSubmitting || lines.length === 0"
               style="font-weight: 700; box-shadow: 0 0 14px rgba(0, 223, 162, 0.4);"
             >
               {{ isSaving ? 'Saving...' : (isCreateMode ? '💾 Save & Create Quotation' : '💾 Save Draft') }}
@@ -97,12 +98,12 @@ import { catchError } from 'rxjs/operators';
 
             <!-- Submit / Resubmit for Approval Button -->
             <button
-              *ngIf="!isCreateMode && quote && (quote.status === 'DRAFT' || quote.status === 'UNDER_NEGOTIATION' || quote.status === 'RETURNED') && currentRole !== 'CUSTOMER'"
+              *ngIf="isEditable && currentRole !== 'CUSTOMER'"
               class="btn btn-primary btn-sm"
-              (click)="submitForApproval()"
-              [disabled]="isSubmitting || lines.length === 0"
+              (click)="submitOrSaveAndSubmit()"
+              [disabled]="isSaving || isSubmitting || lines.length === 0"
             >
-              {{ isSubmitting ? 'Submitting...' : (quote.status === 'RETURNED' ? 'Resubmit for Approval 🚀' : 'Submit for Approval 🚀') }}
+              {{ isSubmitting ? 'Submitting...' : (isCreateMode ? '🚀 Create & Submit for Approval' : (quote?.status === 'RETURNED' ? 'Resubmit for Approval 🚀' : 'Submit for Approval 🚀')) }}
             </button>
 
             <!-- Approval Review Action Buttons for Sales Manager / Finance / Admin -->
@@ -411,20 +412,21 @@ import { catchError } from 'rxjs/operators';
                 <button
                   class="btn btn-success"
                   (click)="saveDraft()"
-                  [disabled]="isSaving || (!isCreateMode && lines.length === 0)"
+                  [disabled]="isSaving || isSubmitting || lines.length === 0"
                   style="padding: 10px 22px; font-weight: 700; font-size: 14px; box-shadow: 0 0 16px rgba(0, 223, 162, 0.35);"
                 >
                   <span *ngIf="isSaving">⏳ Saving Draft...</span>
                   <span *ngIf="!isSaving">{{ isCreateMode ? '💾 Create & Save Quotation' : '💾 Save Quotation Draft' }}</span>
                 </button>
                 <button
-                  *ngIf="!isCreateMode && quote && (quote.status === 'DRAFT' || quote.status === 'UNDER_NEGOTIATION' || quote.status === 'RETURNED')"
+                  *ngIf="currentRole !== 'CUSTOMER' && (isCreateMode || (quote && (quote.status === 'DRAFT' || quote.status === 'UNDER_NEGOTIATION' || quote.status === 'RETURNED')))"
                   class="btn btn-primary"
-                  (click)="submitForApproval()"
-                  [disabled]="isSubmitting || lines.length === 0"
+                  (click)="submitOrSaveAndSubmit()"
+                  [disabled]="isSaving || isSubmitting || lines.length === 0"
                   style="padding: 10px 22px; font-weight: 700; font-size: 14px;"
                 >
-                  {{ isSubmitting ? 'Submitting...' : 'Submit for Approval 🚀' }}
+                  <span *ngIf="isSubmitting">⏳ Submitting...</span>
+                  <span *ngIf="!isSubmitting">{{ isCreateMode ? '🚀 Create & Submit for Approval' : (quote?.status === 'RETURNED' ? 'Resubmit for Approval 🚀' : 'Submit for Approval 🚀') }}</span>
                 </button>
               </div>
             </div>
@@ -1266,6 +1268,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
 
   currentRole = 'ADMIN';
   currentUserName = 'Administrator';
+  currentUserId: number | null = null;
   now = new Date().toISOString();
   Math = Math;
 
@@ -1289,7 +1292,12 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
       this.authService.currentRole$.subscribe(r => this.currentRole = r)
     );
     this.subs.add(
-      this.authService.currentUser$.subscribe(u => this.currentUserName = u.name)
+      this.authService.currentUser$.subscribe(u => {
+        if (u) {
+          this.currentUserName = u.name;
+          this.currentUserId = u.id;
+        }
+      })
     );
 
     this.loadCatalogMasterData();
@@ -1298,6 +1306,10 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
       this.route.paramMap.subscribe(params => {
         const idParam = params.get('id');
         if (!idParam || idParam === 'new') {
+          // If we already hold a freshly created quote in memory, do not discard it
+          if (this.quote && this.quote.id) {
+            return;
+          }
           this.isCreateMode = true;
           this.quoteId = null;
           this.quote = undefined;
@@ -1384,27 +1396,31 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     this.isLoading = true;
     this.errorMessage = null;
 
-    this.quoteService.getQuotationById(id).subscribe({
-      next: (q) => {
-        this.isLoading = false;
-        if (!q) {
-          this.errorMessage = `Quotation #${id} returned empty data from server.`;
-          return;
+    this.quoteService.getQuotationById(id)
+      .pipe(timeout(10000))
+      .subscribe({
+        next: (q) => {
+          this.isLoading = false;
+          if (!q) {
+            this.errorMessage = `Quotation #${id} returned empty data from server.`;
+            return;
+          }
+          this.applyQuoteData(q);
+          this.loadUpsells(id);
+        },
+        error: (err) => {
+          this.isLoading = false;
+          if (err.name === 'TimeoutError') {
+            this.errorMessage = `Connection timed out while loading quotation #${id}. Please check backend service.`;
+          } else if (err.status === 404) {
+            this.errorMessage = `Quotation #${id} was not found in database.`;
+          } else if (err.status === 403) {
+            this.errorMessage = `Access Denied: You do not have permission to view Quotation #${id}.`;
+          } else {
+            this.errorMessage = err.error?.message || err.message || `Failed to load quotation #${id} from backend.`;
+          }
         }
-        this.applyQuoteData(q);
-        this.loadUpsells(id);
-      },
-      error: (err) => {
-        this.isLoading = false;
-        if (err.status === 404) {
-          this.errorMessage = `Quotation #${id} was not found in database.`;
-        } else if (err.status === 403) {
-          this.errorMessage = `Access Denied: You do not have permission to view Quotation #${id}.`;
-        } else {
-          this.errorMessage = err.error?.message || err.message || `Failed to load quotation #${id} from backend.`;
-        }
-      }
-    });
+      });
   }
 
   loadUpsells(quoteId: number): void {
@@ -1659,22 +1675,32 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
       }
 
       this.isSaving = true;
-      const payload = {
+      const linesPayload = this.lines.map(l => {
+        const prodId = l.product?.id || (l as any).productId || (l as any).product_id;
+        return {
+          productId: prodId,
+          quantity: l.quantity || 1,
+          discountPercent: l.unitDiscountPct ?? (l as any).discountPercent ?? 0
+        };
+      });
+
+      const payload: QuotationCreateRequest = {
         customerId: this.selectedCustomerId,
-        promisedDeliveryDate: this.targetDeliveryDate,
-        lines: this.lines.map(l => ({
-          productId: l.product.id,
-          quantity: l.quantity,
-          discountPercent: l.unitDiscountPct || 0
-        }))
+        salesRepId: this.currentUserId || undefined,
+        promisedDeliveryDate: (this.targetDeliveryDate && this.targetDeliveryDate.trim()) ? this.targetDeliveryDate.trim() : undefined,
+        lines: linesPayload
       };
 
       this.quoteService.createQuotation(payload).subscribe({
         next: (created) => {
           this.isSaving = false;
+          this.isLoading = false;
           this.applyQuoteData(created);
           this.showAlert(`Quotation ${created.quoteNumber || ('#' + created.id)} created successfully and saved in database!`, 'success');
-          this.router.navigate(['/dashboard/quote', created.id], { replaceUrl: true });
+          // Silently update browser URL without tearing down component and triggering infinite loading
+          window.history.replaceState(null, '', `/dashboard/quote/${created.id}`);
+          this.quoteId = created.id;
+          this.isCreateMode = false;
         },
         error: (err) => {
           this.isSaving = false;
@@ -1691,9 +1717,9 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
       this.isSaving = true;
       const lineRequests: LineItemRequest[] = this.lines.map(l => ({
         id: l.id,
-        productId: l.product.id,
-        quantity: l.quantity,
-        discountPercent: l.unitDiscountPct || 0
+        productId: l.product?.id || (l as any).productId || (l as any).product_id,
+        quantity: l.quantity || 1,
+        discountPercent: l.unitDiscountPct ?? (l as any).discountPercent ?? 0
       }));
 
       this.quoteService.updateQuotationLines(this.quote.id, lineRequests).subscribe({
@@ -1710,6 +1736,68 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     }
   }
 
+  submitOrSaveAndSubmit(): void {
+    if (this.isCreateMode) {
+      if (!this.selectedCustomerId) {
+        this.showAlert('Please select an enterprise customer to create quotation.', 'error');
+        return;
+      }
+      if (this.lines.length === 0) {
+        this.showAlert('Please add at least one line item to submit for approval.', 'error');
+        return;
+      }
+
+      this.isSubmitting = true;
+      const linesPayload = this.lines.map(l => {
+        const prodId = l.product?.id || (l as any).productId || (l as any).product_id;
+        return {
+          productId: prodId,
+          quantity: l.quantity || 1,
+          discountPercent: l.unitDiscountPct ?? (l as any).discountPercent ?? 0
+        };
+      });
+
+      const payload: QuotationCreateRequest = {
+        customerId: this.selectedCustomerId,
+        salesRepId: this.currentUserId || undefined,
+        promisedDeliveryDate: (this.targetDeliveryDate && this.targetDeliveryDate.trim()) ? this.targetDeliveryDate.trim() : undefined,
+        lines: linesPayload
+      };
+
+      this.quoteService.createQuotation(payload).subscribe({
+        next: (created) => {
+          this.applyQuoteData(created);
+          window.history.replaceState(null, '', `/dashboard/quote/${created.id}`);
+          this.quoteId = created.id;
+          this.isCreateMode = false;
+
+          // Immediately submit created quote for approval
+          this.quoteService.submitForApproval(created.id).subscribe({
+            next: (res) => {
+              this.isSubmitting = false;
+              const newStatus = res?.status || 'PENDING_APPROVAL';
+              if (this.quote) {
+                this.quote.status = newStatus;
+              }
+              this.showAlert(res?.message || `Quotation ${created.quoteNumber || ('#' + created.id)} created and submitted! Status: ${newStatus}`, 'success');
+              this.loadQuote(created.id);
+            },
+            error: (submitErr) => {
+              this.isSubmitting = false;
+              this.showAlert(`Quotation was saved as #${created.id}, but approval submission failed: ${submitErr.error?.message || submitErr.message}`, 'error');
+            }
+          });
+        },
+        error: (err) => {
+          this.isSubmitting = false;
+          this.showAlert(`Failed to create quotation: ${err.error?.message || err.message || 'Server error'}`, 'error');
+        }
+      });
+    } else {
+      this.submitForApproval();
+    }
+  }
+
   submitForApproval(): void {
     if (!this.quote) return;
     this.isSubmitting = true;
@@ -1717,17 +1805,21 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     // Save line changes first if any, then submit
     const lineRequests: LineItemRequest[] = this.lines.map(l => ({
       id: l.id,
-      productId: l.product.id,
-      quantity: l.quantity,
-      discountPercent: l.unitDiscountPct || 0
+      productId: l.product?.id || (l as any).productId || (l as any).product_id,
+      quantity: l.quantity || 1,
+      discountPercent: l.unitDiscountPct ?? (l as any).discountPercent ?? 0
     }));
 
     this.quoteService.updateQuotationLines(this.quote.id, lineRequests).subscribe({
-      next: () => {
+      next: (updated) => {
+        this.applyQuoteData(updated);
         this.quoteService.submitForApproval(this.quote!.id).subscribe({
           next: (res) => {
             this.isSubmitting = false;
             const newStatus = res?.status || 'PENDING_APPROVAL';
+            if (this.quote) {
+              this.quote.status = newStatus;
+            }
             this.showAlert(res?.message || `Quotation successfully submitted! Status is now ${newStatus}.`, 'success');
             if (this.quoteId) {
               this.loadQuote(this.quoteId);
@@ -1740,8 +1832,24 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
         });
       },
       error: (err) => {
-        this.isSubmitting = false;
-        this.showAlert(`Failed to save lines before submission: ${err.message}`, 'error');
+        // If line update fails because quotation status does not allow edits, proceed to submit
+        this.quoteService.submitForApproval(this.quote!.id).subscribe({
+          next: (res) => {
+            this.isSubmitting = false;
+            const newStatus = res?.status || 'PENDING_APPROVAL';
+            if (this.quote) {
+              this.quote.status = newStatus;
+            }
+            this.showAlert(res?.message || `Quotation successfully submitted! Status is now ${newStatus}.`, 'success');
+            if (this.quoteId) {
+              this.loadQuote(this.quoteId);
+            }
+          },
+          error: (subErr) => {
+            this.isSubmitting = false;
+            this.showAlert(`Failed to submit for approval: ${subErr.error?.message || subErr.message || 'Server error'}`, 'error');
+          }
+        });
       }
     });
   }

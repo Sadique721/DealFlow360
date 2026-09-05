@@ -71,6 +71,9 @@ public class QuotationController {
             @RequestBody QuotationCreateRequest request,
             @AuthenticationPrincipal AuthUser authUser) {
         String email = authUser != null ? authUser.getUsername() : "admin@dealflow360.com";
+        if (request.getSalesRepId() == null && authUser != null && authUser.getUser() != null) {
+            request.setSalesRepId(authUser.getUser().getId());
+        }
         return ResponseEntity.ok(quotationService.createQuotation(request, email));
     }
 

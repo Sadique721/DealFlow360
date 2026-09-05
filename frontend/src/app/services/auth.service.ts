@@ -237,6 +237,8 @@ export class AuthService {
     const access: Record<string, UserRole[]> = {
       'dashboard':       ['SALES_REP', 'SALES_MANAGER', 'FINANCE'],
       'quotations':      ['SALES_REP', 'SALES_MANAGER', 'FINANCE'],
+      'quote':           ['SALES_REP', 'SALES_MANAGER', 'FINANCE'],
+      'quotation':       ['SALES_REP', 'SALES_MANAGER', 'FINANCE'],
       'customers':       ['SALES_REP', 'SALES_MANAGER', 'FINANCE'],
       'products':        ['SALES_REP', 'SALES_MANAGER'],
       'approvals':       ['SALES_MANAGER', 'FINANCE'],
