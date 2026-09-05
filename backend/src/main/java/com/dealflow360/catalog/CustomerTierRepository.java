@@ -8,4 +8,5 @@ import java.util.Optional;
 @Repository
 public interface CustomerTierRepository extends JpaRepository<CustomerTier, Long> {
     Optional<CustomerTier> findByTierName(String tierName);
+    Optional<CustomerTier> findByTierNameIgnoreCase(String tierName);
 }

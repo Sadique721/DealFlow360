@@ -3,6 +3,8 @@ package com.dealflow360.quotation;
 import com.dealflow360.auth.AuthUser;
 import com.dealflow360.discount.RiskCalculationResult;
 import com.dealflow360.quotation.dto.LineItemRequest;
+import com.dealflow360.quotation.dto.QuotationCalculateRequest;
+import com.dealflow360.quotation.dto.QuotationCalculateResponse;
 import com.dealflow360.quotation.dto.QuotationCreateRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,17 +29,27 @@ public class QuotationController {
     }
 
     @GetMapping
-    @Operation(summary = "List quotations with optional repId and status filters")
+    @Operation(summary = "List quotations with role-based scoping and optional filters")
     public ResponseEntity<List<Quotation>> listQuotations(
             @RequestParam(required = false) Long repId,
-            @RequestParam(required = false) String status) {
-        return ResponseEntity.ok(quotationService.listQuotations(repId, status));
+            @RequestParam(required = false) String status,
+            @AuthenticationPrincipal AuthUser authUser) {
+        return ResponseEntity.ok(quotationService.listQuotations(repId, status, authUser));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Get quotation by ID including all lines and customer details")
-    public ResponseEntity<Quotation> getQuotation(@PathVariable Long id) {
-        return ResponseEntity.ok(quotationService.getQuotationById(id));
+    public ResponseEntity<Quotation> getQuotation(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUser authUser) {
+        return ResponseEntity.ok(quotationService.getQuotationByIdSecured(id, authUser));
+    }
+
+    @PostMapping("/calculate")
+    @Operation(summary = "Calculate line totals, margins, taxes, and risk scores live without saving")
+    public ResponseEntity<QuotationCalculateResponse> calculate(
+            @RequestBody QuotationCalculateRequest request) {
+        return ResponseEntity.ok(quotationService.calculateQuotationPreview(request));
     }
 
     @PostMapping
@@ -56,7 +68,7 @@ public class QuotationController {
             @RequestBody List<LineItemRequest> lines,
             @AuthenticationPrincipal AuthUser authUser) {
         String changedBy = authUser != null ? authUser.getName() : "Sales Rep";
-        return ResponseEntity.ok(quotationService.updateQuotationLines(id, lines, changedBy));
+        return ResponseEntity.ok(quotationService.updateQuotationLines(id, lines, changedBy, authUser));
     }
 
     @PostMapping("/{id}/submit")
@@ -66,6 +78,24 @@ public class QuotationController {
             @AuthenticationPrincipal AuthUser authUser) {
         String submittedBy = authUser != null ? authUser.getName() : "Sales Rep";
         return ResponseEntity.ok(quotationService.submitForApproval(id, submittedBy));
+    }
+
+    @PostMapping("/{id}/confirm")
+    @Operation(summary = "Confirm quotation and convert to order")
+    public ResponseEntity<Quotation> confirmQuotation(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUser authUser) {
+        String confirmedBy = authUser != null ? authUser.getName() : "User";
+        return ResponseEntity.ok(quotationService.confirmQuotation(id, confirmedBy));
+    }
+
+    @PostMapping("/{id}/cancel")
+    @Operation(summary = "Cancel quotation")
+    public ResponseEntity<Quotation> cancelQuotation(
+            @PathVariable Long id,
+            @AuthenticationPrincipal AuthUser authUser) {
+        String cancelledBy = authUser != null ? authUser.getName() : "User";
+        return ResponseEntity.ok(quotationService.cancelQuotation(id, cancelledBy));
     }
 
     @GetMapping("/{id}/risk-breakdown")

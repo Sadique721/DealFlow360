@@ -6,7 +6,6 @@ import { QuotationService } from '../services/quotation.service';
 import { DealHealthService } from '../services/dealhealth.service';
 import { AuthService } from '../services/auth.service';
 import { Quotation, DealHealthFlag } from '../models/dealflow.model';
-import { generate120Quotations, generate120HealthFlags } from '../services/mock-data';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -44,7 +43,7 @@ import { Subscription } from 'rxjs';
           </div>
           <div class="stat-bubble">
             <span class="mono rbac-count text-muted">{{ allQuotations.length }}</span>
-            <span class="rbac-sub">System Total</span>
+            <span class="rbac-sub">Scoped Total</span>
           </div>
         </div>
       </div>
@@ -57,7 +56,7 @@ import { Subscription } from 'rxjs';
             <span class="badge badge-info">Scoped Revenue</span>
           </div>
           <div class="metric-value gradient-cyan">{{ formatCurrency(totalPipelineValue) }}</div>
-          <div class="metric-sub">Across {{ quotations.length }} scoped enterprise opportunities</div>
+          <div class="metric-sub">Across {{ quotations.length }} active enterprise opportunities</div>
         </div>
 
         <div class="glass-panel metric-card cyber-glow-purple">
@@ -121,6 +120,13 @@ import { Subscription } from 'rxjs';
             </button>
             <button
               class="pill-btn"
+              [class.active]="selectedStatus === 'DRAFT'"
+              (click)="filterStatus('DRAFT')"
+            >
+              Draft ({{ getStatusCount('DRAFT') }})
+            </button>
+            <button
+              class="pill-btn"
               [class.active]="selectedStatus === 'PENDING_APPROVAL'"
               (click)="filterStatus('PENDING_APPROVAL')"
             >
@@ -135,17 +141,17 @@ import { Subscription } from 'rxjs';
             </button>
             <button
               class="pill-btn"
-              [class.active]="selectedStatus === 'SENT_TO_CUSTOMER'"
-              (click)="filterStatus('SENT_TO_CUSTOMER')"
+              [class.active]="selectedStatus === 'NEGOTIATION'"
+              (click)="filterStatus('NEGOTIATION')"
             >
-              In Negotiation ({{ getStatusCount('SENT_TO_CUSTOMER') }})
+              Negotiation ({{ getStatusCount('NEGOTIATION') }})
             </button>
             <button
               class="pill-btn"
-              [class.active]="selectedStatus === 'ACCEPTED'"
-              (click)="filterStatus('ACCEPTED')"
+              [class.active]="selectedStatus === 'CONFIRMED'"
+              (click)="filterStatus('CONFIRMED')"
             >
-              Accepted / Won ({{ getStatusCount('ACCEPTED') }})
+              Confirmed / Won ({{ getStatusCount('CONFIRMED') }})
             </button>
           </div>
         </div>
@@ -165,16 +171,16 @@ import { Subscription } from 'rxjs';
               class="toggle-btn"
               [class.active]="viewMode === 'table'"
               (click)="viewMode = 'table'"
-              title="120+ Data Grid View with Sorting & Pagination"
+              title="Data Grid View with Sorting & Pagination"
             >
               <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-              Data Grid (120+)
+              Data Grid
             </button>
           </div>
 
-          <a routerLink="/quote/new" class="btn btn-primary">
+          <a *ngIf="currentRole !== 'CUSTOMER'" routerLink="/dashboard/quote/new" class="btn btn-primary">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
-            CPQ Builder
+            + New Quotation
           </a>
         </div>
       </div>
@@ -191,26 +197,29 @@ import { Subscription } from 'rxjs';
             <span class="badge badge-neutral">{{ getQuotesByStage('DRAFT').length }}</span>
           </div>
           <div class="cards-list">
-            <div class="glass-panel deal-card" *ngFor="let q of getQuotesByStage('DRAFT').slice(0, 15)">
+            <div class="glass-panel deal-card" *ngFor="let q of getQuotesByStage('DRAFT')">
               <div class="card-top">
                 <span class="mono card-id">{{ q.quoteNumber }}</span>
-                <span class="badge badge-neutral">{{ q.customer.tier.tierName || 'Standard' }}</span>
+                <span class="badge badge-neutral">{{ getCustomerTierName(q) }}</span>
               </div>
-              <h4 class="card-client">{{ q.customer.name }}</h4>
+              <h4 class="card-client">{{ q.customer?.name || 'Customer' }}</h4>
               <div class="card-value">{{ formatCurrency(q.totalAmount) }}</div>
               <div class="card-progress">
                 <div class="progress-bar-bg">
-                  <div class="progress-fill" [style.width.%]="q.marginPct" [style.background]="getMarginColor(q.marginPct)"></div>
+                  <div class="progress-fill" [style.width.%]="getMargin(q)" [style.background]="getMarginColor(getMargin(q))"></div>
                 </div>
                 <div class="progress-labels">
-                  <span>Disc: {{ q.blendedDiscountPct }}%</span>
-                  <span [style.color]="getMarginColor(q.marginPct)">Margin: {{ q.marginPct | number:'1.1-1' }}%</span>
+                  <span>Disc: {{ getDiscountPct(q) | number:'1.1-1' }}%</span>
+                  <span [style.color]="getMarginColor(getMargin(q))">Margin: {{ getMargin(q) | number:'1.1-1' }}%</span>
                 </div>
               </div>
               <div class="card-footer">
-                <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/quote', q.id]" class="btn btn-outline btn-sm">Edit CPQ</a>
+                <span class="rep-tag">👤 {{ q.salesRep?.name || 'Sales Rep' }}</span>
+                <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-outline btn-sm">Edit Quote</a>
               </div>
+            </div>
+            <div *ngIf="getQuotesByStage('DRAFT').length === 0" class="empty-column-notice">
+              No draft quotations
             </div>
           </div>
         </div>
@@ -225,26 +234,29 @@ import { Subscription } from 'rxjs';
             <span class="badge badge-warning">{{ getQuotesByStage('PENDING_APPROVAL').length }}</span>
           </div>
           <div class="cards-list">
-            <div class="glass-panel deal-card highlight-warning" *ngFor="let q of getQuotesByStage('PENDING_APPROVAL').slice(0, 15)">
+            <div class="glass-panel deal-card highlight-warning" *ngFor="let q of getQuotesByStage('PENDING_APPROVAL')">
               <div class="card-top">
                 <span class="mono card-id">{{ q.quoteNumber }}</span>
-                <span class="badge badge-warning">Tier 2 Escalation</span>
+                <span class="badge badge-warning">Risk: {{ getRiskScore(q) | number:'1.0-0' }}</span>
               </div>
-              <h4 class="card-client">{{ q.customer.name }}</h4>
+              <h4 class="card-client">{{ q.customer?.name || 'Customer' }}</h4>
               <div class="card-value text-warning">{{ formatCurrency(q.totalAmount) }}</div>
               <div class="card-progress">
                 <div class="progress-bar-bg">
-                  <div class="progress-fill" [style.width.%]="q.marginPct" [style.background]="getMarginColor(q.marginPct)"></div>
+                  <div class="progress-fill" [style.width.%]="getMargin(q)" [style.background]="getMarginColor(getMargin(q))"></div>
                 </div>
                 <div class="progress-labels">
-                  <span class="text-danger">Disc: {{ q.blendedDiscountPct }}% (Spike)</span>
-                  <span [style.color]="getMarginColor(q.marginPct)">Margin: {{ q.marginPct | number:'1.1-1' }}%</span>
+                  <span class="text-danger">Disc: {{ getDiscountPct(q) | number:'1.1-1' }}%</span>
+                  <span [style.color]="getMarginColor(getMargin(q))">Margin: {{ getMargin(q) | number:'1.1-1' }}%</span>
                 </div>
               </div>
               <div class="card-footer">
-                <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/approval', q.id]" class="btn btn-danger btn-sm">Review & Rebalance</a>
+                <span class="rep-tag">👤 {{ q.salesRep?.name || 'Sales Rep' }}</span>
+                <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-danger btn-sm">Review Quote</a>
               </div>
+            </div>
+            <div *ngIf="getQuotesByStage('PENDING_APPROVAL').length === 0" class="empty-column-notice">
+              No quotations pending approval
             </div>
           </div>
         </div>
@@ -259,26 +271,29 @@ import { Subscription } from 'rxjs';
             <span class="badge badge-success">{{ getQuotesByStage('APPROVED').length }}</span>
           </div>
           <div class="cards-list">
-            <div class="glass-panel deal-card highlight-success" *ngFor="let q of getQuotesByStage('APPROVED').slice(0, 15)">
+            <div class="glass-panel deal-card highlight-success" *ngFor="let q of getQuotesByStage('APPROVED')">
               <div class="card-top">
                 <span class="mono card-id">{{ q.quoteNumber }}</span>
                 <span class="badge badge-success">Policy Verified</span>
               </div>
-              <h4 class="card-client">{{ q.customer.name }}</h4>
+              <h4 class="card-client">{{ q.customer?.name || 'Customer' }}</h4>
               <div class="card-value text-emerald">{{ formatCurrency(q.totalAmount) }}</div>
               <div class="card-progress">
                 <div class="progress-bar-bg">
-                  <div class="progress-fill" [style.width.%]="q.marginPct" [style.background]="getMarginColor(q.marginPct)"></div>
+                  <div class="progress-fill" [style.width.%]="getMargin(q)" [style.background]="getMarginColor(getMargin(q))"></div>
                 </div>
                 <div class="progress-labels">
-                  <span>Disc: {{ q.blendedDiscountPct }}%</span>
-                  <span [style.color]="getMarginColor(q.marginPct)">Margin: {{ q.marginPct | number:'1.1-1' }}%</span>
+                  <span>Disc: {{ getDiscountPct(q) | number:'1.1-1' }}%</span>
+                  <span [style.color]="getMarginColor(getMargin(q))">Margin: {{ getMargin(q) | number:'1.1-1' }}%</span>
                 </div>
               </div>
               <div class="card-footer">
-                <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/fulfillment', q.id]" class="btn btn-outline btn-sm">Split Logistics</a>
+                <span class="rep-tag">👤 {{ q.salesRep?.name || 'Sales Rep' }}</span>
+                <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-outline btn-sm">View & Confirm</a>
               </div>
+            </div>
+            <div *ngIf="getQuotesByStage('APPROVED').length === 0" class="empty-column-notice">
+              No approved quotations
             </div>
           </div>
         </div>
@@ -288,31 +303,34 @@ import { Subscription } from 'rxjs';
           <div class="column-header">
             <div class="col-title">
               <span class="stage-dot stage-portal"></span>
-              <span>Customer Portal</span>
+              <span>Customer Negotiation</span>
             </div>
-            <span class="badge badge-info">{{ getQuotesByStage('SENT_TO_CUSTOMER').length }}</span>
+            <span class="badge badge-info">{{ getQuotesByStage('NEGOTIATION').length }}</span>
           </div>
           <div class="cards-list">
-            <div class="glass-panel deal-card" *ngFor="let q of getQuotesByStage('SENT_TO_CUSTOMER').slice(0, 15)">
+            <div class="glass-panel deal-card" *ngFor="let q of getQuotesByStage('NEGOTIATION')">
               <div class="card-top">
                 <span class="mono card-id">{{ q.quoteNumber }}</span>
-                <span class="badge badge-info">Magic Link Sent</span>
+                <span class="badge badge-info">In Negotiation</span>
               </div>
-              <h4 class="card-client">{{ q.customer.name }}</h4>
+              <h4 class="card-client">{{ q.customer?.name || 'Customer' }}</h4>
               <div class="card-value">{{ formatCurrency(q.totalAmount) }}</div>
               <div class="card-progress">
                 <div class="progress-bar-bg">
-                  <div class="progress-fill" [style.width.%]="q.marginPct" [style.background]="getMarginColor(q.marginPct)"></div>
+                  <div class="progress-fill" [style.width.%]="getMargin(q)" [style.background]="getMarginColor(getMargin(q))"></div>
                 </div>
                 <div class="progress-labels">
-                  <span>Disc: {{ q.blendedDiscountPct }}%</span>
-                  <span [style.color]="getMarginColor(q.marginPct)">Margin: {{ q.marginPct | number:'1.1-1' }}%</span>
+                  <span>Disc: {{ getDiscountPct(q) | number:'1.1-1' }}%</span>
+                  <span [style.color]="getMarginColor(getMargin(q))">Margin: {{ getMargin(q) | number:'1.1-1' }}%</span>
                 </div>
               </div>
               <div class="card-footer">
-                <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a routerLink="/portal/token-zenith-1042" class="btn btn-outline btn-sm">Portal View ↗</a>
+                <span class="rep-tag">👤 {{ q.salesRep?.name || 'Sales Rep' }}</span>
+                <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-outline btn-sm">View Deal</a>
               </div>
+            </div>
+            <div *ngIf="getQuotesByStage('NEGOTIATION').length === 0" class="empty-column-notice">
+              No negotiations in progress
             </div>
           </div>
         </div>
@@ -322,37 +340,40 @@ import { Subscription } from 'rxjs';
           <div class="column-header">
             <div class="col-title">
               <span class="stage-dot stage-won"></span>
-              <span>Closed Won</span>
+              <span>Closed Won / Confirmed</span>
             </div>
-            <span class="badge badge-purple">{{ getQuotesByStage('ACCEPTED').length }}</span>
+            <span class="badge badge-purple">{{ getQuotesByStage('CONFIRMED').length }}</span>
           </div>
           <div class="cards-list">
-            <div class="glass-panel deal-card highlight-purple" *ngFor="let q of getQuotesByStage('ACCEPTED').slice(0, 15)">
+            <div class="glass-panel deal-card highlight-purple" *ngFor="let q of getQuotesByStage('CONFIRMED')">
               <div class="card-top">
                 <span class="mono card-id">{{ q.quoteNumber }}</span>
-                <span class="badge badge-purple">Signed Deal</span>
+                <span class="badge badge-purple">Order Confirmed</span>
               </div>
-              <h4 class="card-client">{{ q.customer.name }}</h4>
+              <h4 class="card-client">{{ q.customer?.name || 'Customer' }}</h4>
               <div class="card-value text-purple">{{ formatCurrency(q.totalAmount) }}</div>
               <div class="card-progress">
                 <div class="progress-bar-bg">
-                  <div class="progress-fill" [style.width.%]="q.marginPct" [style.background]="getMarginColor(q.marginPct)"></div>
+                  <div class="progress-fill" [style.width.%]="getMargin(q)" [style.background]="getMarginColor(getMargin(q))"></div>
                 </div>
                 <div class="progress-labels">
-                  <span>Disc: {{ q.blendedDiscountPct }}%</span>
-                  <span [style.color]="getMarginColor(q.marginPct)">Margin: {{ q.marginPct | number:'1.1-1' }}%</span>
+                  <span>Disc: {{ getDiscountPct(q) | number:'1.1-1' }}%</span>
+                  <span [style.color]="getMarginColor(getMargin(q))">Margin: {{ getMargin(q) | number:'1.1-1' }}%</span>
                 </div>
               </div>
               <div class="card-footer">
-                <span class="rep-tag">👤 {{ q.salesRep.name }}</span>
-                <a [routerLink]="['/fulfillment', q.id]" class="btn btn-success btn-sm">Fulfillment</a>
+                <span class="rep-tag">👤 {{ q.salesRep?.name || 'Sales Rep' }}</span>
+                <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-success btn-sm">View Order</a>
               </div>
+            </div>
+            <div *ngIf="getQuotesByStage('CONFIRMED').length === 0" class="empty-column-notice">
+              No confirmed orders
             </div>
           </div>
         </div>
       </div>
 
-      <!-- DETAILED 120+ DATA GRID VIEW WITH SEARCH, SORT, AND PAGINATION -->
+      <!-- DETAILED DATA GRID VIEW WITH SEARCH, SORT, AND PAGINATION -->
       <div class="glass-panel table-card" *ngIf="viewMode === 'table'">
         <div class="table-container">
           <table class="table-custom">
@@ -371,13 +392,13 @@ import { Subscription } from 'rxjs';
                   Subtotal Value <span class="sort-icon">{{ getSortIcon('subtotalAmount') }}</span>
                 </th>
                 <th (click)="setSort('blendedDiscountPct')" class="sortable-th">
-                  Blended Discount <span class="sort-icon">{{ getSortIcon('blendedDiscountPct') }}</span>
+                  Discount % <span class="sort-icon">{{ getSortIcon('blendedDiscountPct') }}</span>
                 </th>
                 <th (click)="setSort('marginPct')" class="sortable-th">
                   Gross Margin % <span class="sort-icon">{{ getSortIcon('marginPct') }}</span>
                 </th>
                 <th (click)="setSort('riskSeverity')" class="sortable-th">
-                  Risk Classification <span class="sort-icon">{{ getSortIcon('riskSeverity') }}</span>
+                  Risk Level <span class="sort-icon">{{ getSortIcon('riskSeverity') }}</span>
                 </th>
                 <th (click)="setSort('status')" class="sortable-th">
                   Stage Status <span class="sort-icon">{{ getSortIcon('status') }}</span>
@@ -388,39 +409,39 @@ import { Subscription } from 'rxjs';
             <tbody>
               <tr *ngFor="let q of paginatedQuotations">
                 <td>
-                  <span class="mono quote-num">{{ q.quoteNumber }}</span>
+                  <a [routerLink]="['/dashboard/quote', q.id]" class="mono quote-num">{{ q.quoteNumber }}</a>
                 </td>
                 <td>
                   <div class="customer-info">
-                    <strong>{{ q.customer.name }}</strong>
-                    <span class="badge badge-neutral tier-tag">{{ q.customer.tier.tierName || 'Standard' }}</span>
+                    <strong>{{ q.customer?.name || 'Customer' }}</strong>
+                    <span class="badge badge-neutral tier-tag">{{ getCustomerTierName(q) }}</span>
                   </div>
                 </td>
-                <td>{{ q.salesRep.name }}</td>
-                <td class="mono font-semibold">{{ formatCurrency(q.subtotalAmount) }}</td>
+                <td>{{ q.salesRep?.name || 'Sales Rep' }}</td>
+                <td class="mono font-semibold">{{ formatCurrency(q.subtotalAmount || q.totalAmount) }}</td>
                 <td>
-                  <span [class.text-danger]="q.blendedDiscountPct > 15" class="mono font-semibold">
-                    {{ q.blendedDiscountPct | number:'1.1-1' }}%
+                  <span [class.text-danger]="getDiscountPct(q) > 15" class="mono font-semibold">
+                    {{ getDiscountPct(q) | number:'1.1-1' }}%
                   </span>
                 </td>
                 <td>
                   <span
                     class="badge"
-                    [class.badge-success]="q.marginPct >= 30"
-                    [class.badge-warning]="q.marginPct >= 18 && q.marginPct < 30"
-                    [class.badge-danger]="q.marginPct < 18"
+                    [class.badge-success]="getMargin(q) >= 30"
+                    [class.badge-warning]="getMargin(q) >= 18 && getMargin(q) < 30"
+                    [class.badge-danger]="getMargin(q) < 18"
                   >
-                    {{ q.marginPct | number:'1.1-1' }}%
+                    {{ getMargin(q) | number:'1.1-1' }}%
                   </span>
                 </td>
                 <td>
                   <span
                     class="badge"
-                    [class.badge-success]="q.riskSeverity === 'LOW'"
-                    [class.badge-warning]="q.riskSeverity === 'MEDIUM'"
-                    [class.badge-danger]="q.riskSeverity === 'HIGH' || q.riskSeverity === 'CRITICAL'"
+                    [class.badge-success]="getRiskSeverity(q) === 'LOW'"
+                    [class.badge-warning]="getRiskSeverity(q) === 'MEDIUM'"
+                    [class.badge-danger]="getRiskSeverity(q) === 'HIGH' || getRiskSeverity(q) === 'CRITICAL'"
                   >
-                    {{ q.riskSeverity }}
+                    {{ getRiskSeverity(q) }}
                   </span>
                 </td>
                 <td>
@@ -428,24 +449,29 @@ import { Subscription } from 'rxjs';
                     class="badge"
                     [class.badge-warning]="q.status === 'PENDING_APPROVAL'"
                     [class.badge-success]="q.status === 'APPROVED'"
-                    [class.badge-info]="q.status === 'SENT_TO_CUSTOMER'"
+                    [class.badge-info]="q.status === 'SENT_TO_CUSTOMER' || q.status === 'UNDER_NEGOTIATION'"
                     [class.badge-purple]="q.status === 'ACCEPTED' || q.status === 'CONFIRMED'"
                     [class.badge-neutral]="q.status === 'DRAFT'"
                   >
-                    {{ q.status.replace('_', ' ') }}
+                    {{ (q.status || 'DRAFT').replace('_', ' ') }}
                   </span>
                 </td>
                 <td>
                   <div class="row-actions">
-                    <a [routerLink]="['/quote', q.id]" class="btn btn-outline btn-sm">Edit</a>
-                    <a *ngIf="q.status === 'PENDING_APPROVAL'" [routerLink]="['/approval', q.id]" class="btn btn-danger btn-sm">Review</a>
-                    <a *ngIf="q.status === 'APPROVED' || q.status === 'ACCEPTED' || q.status === 'CONFIRMED'" [routerLink]="['/fulfillment', q.id]" class="btn btn-outline btn-sm">Splits</a>
+                    <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-outline btn-sm">Open</a>
+                    <a *ngIf="q.status === 'PENDING_APPROVAL'" [routerLink]="['/dashboard/quote', q.id]" class="btn btn-danger btn-sm">Review</a>
+                    <a *ngIf="q.status === 'APPROVED' || q.status === 'ACCEPTED' || q.status === 'CONFIRMED'" [routerLink]="['/dashboard/fulfillment', q.id]" class="btn btn-outline btn-sm">Splits</a>
                   </div>
                 </td>
               </tr>
               <tr *ngIf="paginatedQuotations.length === 0">
-                <td colspan="9" class="text-center py-4 text-muted">
-                  No matching quotations found in current role scope. Try resetting filters.
+                <td colspan="9" class="text-center py-5 text-muted">
+                  <div class="empty-state-box">
+                    <p class="mb-2">No matching quotations found in current scope.</p>
+                    <a *ngIf="currentRole !== 'CUSTOMER'" routerLink="/dashboard/quote/new" class="btn btn-primary btn-sm">
+                      + Create Quotation
+                    </a>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -453,7 +479,7 @@ import { Subscription } from 'rxjs';
         </div>
 
         <!-- Table Pagination Toolbar -->
-        <div class="table-pagination-bar">
+        <div class="table-pagination-bar" *ngIf="filteredQuotations.length > 0">
           <div class="pagination-info">
             Showing <strong>{{ paginationStartRecord }}</strong> to <strong>{{ paginationEndRecord }}</strong> of <strong>{{ filteredQuotations.length }}</strong> quotations
           </div>
@@ -464,7 +490,6 @@ import { Subscription } from 'rxjs';
                 <option [ngValue]="10">10</option>
                 <option [ngValue]="25">25</option>
                 <option [ngValue]="50">50</option>
-                <option [ngValue]="100">100</option>
               </select>
             </div>
             <div class="page-nav-buttons">
@@ -519,24 +544,24 @@ import { Subscription } from 'rxjs';
     }
     .rbac-stats {
       display: flex;
-      gap: 12px;
+      gap: 16px;
     }
     .stat-bubble {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid var(--border-subtle);
-      border-radius: 8px;
+      align-items: flex-end;
       padding: 6px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
     }
     .rbac-count {
       font-size: 18px;
       font-weight: 800;
-      color: #fff;
+      color: #00f2fe;
     }
     .rbac-sub {
-      font-size: 10px;
+      font-size: 11px;
       color: var(--text-muted);
       text-transform: uppercase;
     }
@@ -544,67 +569,52 @@ import { Subscription } from 'rxjs';
     /* Metrics Grid */
     .metrics-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 16px;
     }
     .metric-card {
-      padding: 18px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
       position: relative;
       overflow: hidden;
-    }
-    .cyber-glow-cyan {
-      border-color: rgba(0, 242, 254, 0.25);
-      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 0 15px rgba(0, 242, 254, 0.08);
-    }
-    .cyber-glow-purple {
-      border-color: rgba(168, 85, 247, 0.25);
-      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 0 15px rgba(168, 85, 247, 0.08);
-    }
-    .cyber-glow-amber {
-      border-color: rgba(251, 191, 36, 0.25);
-      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 0 15px rgba(251, 191, 36, 0.08);
-    }
-    .cyber-glow-rose {
-      border-color: rgba(255, 0, 122, 0.25);
-      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 0 15px rgba(255, 0, 122, 0.08);
-    }
-    .cyber-glow-emerald {
-      border-color: rgba(0, 223, 162, 0.25);
-      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 0 15px rgba(0, 223, 162, 0.08);
     }
     .metric-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
     }
     .metric-title {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--text-muted);
+      font-size: 12px;
+      color: var(--text-sub);
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.5px;
     }
     .metric-value {
-      font-size: 28px;
+      font-size: 24px;
       font-weight: 800;
       font-family: 'Outfit', sans-serif;
-      margin-bottom: 4px;
-      letter-spacing: -0.02em;
     }
-    .gradient-cyan {
-      background: linear-gradient(135deg, #00f2fe 0%, #38bdf8 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .text-emerald { color: #00dfa2; }
-    .text-warning { color: #fbbf24; }
-    .text-danger { color: #ff007a; }
-    .text-purple { color: #c084fc; }
     .metric-sub {
       font-size: 11px;
       color: var(--text-muted);
     }
+
+    /* Glow classes */
+    .cyber-glow-cyan { border-top: 2px solid #00f2fe; }
+    .cyber-glow-purple { border-top: 2px solid #7c3aed; }
+    .cyber-glow-amber { border-top: 2px solid #fbbf24; }
+    .cyber-glow-rose { border-top: 2px solid #ff007a; }
+    .cyber-glow-emerald { border-top: 2px solid #00dfa2; }
+
+    .gradient-cyan {
+      background: linear-gradient(135deg, #00f2fe, #4facfe);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .text-emerald { color: #00dfa2; }
 
     /* Action Bar */
     .action-bar {
@@ -624,17 +634,19 @@ import { Subscription } from 'rxjs';
     }
     .search-input-wrapper {
       position: relative;
-      width: 260px;
+      min-width: 260px;
     }
     .search-icon {
       position: absolute;
-      left: 10px;
+      left: 12px;
       top: 50%;
       transform: translateY(-50%);
       color: var(--text-muted);
     }
     .search-box {
-      padding-left: 34px;
+      padding-left: 36px !important;
+      height: 38px;
+      font-size: 13px;
     }
     .filter-pills {
       display: flex;
@@ -642,19 +654,25 @@ import { Subscription } from 'rxjs';
       flex-wrap: wrap;
     }
     .pill-btn {
+      padding: 6px 12px;
+      border-radius: 20px;
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid var(--border-subtle);
       color: var(--text-sub);
-      padding: 6px 14px;
-      border-radius: var(--radius-full);
       font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
-      transition: all var(--transition-fast);
+      transition: all 0.2s ease;
     }
-    .pill-btn.active, .pill-btn:hover {
-      background: rgba(0, 242, 254, 0.12);
-      border-color: rgba(0, 242, 254, 0.5);
-      color: #00f2fe;
+    .pill-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+    .pill-btn.active {
+      background: var(--brand-gradient);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 0 12px rgba(0, 242, 254, 0.3);
     }
     .action-buttons {
       display: flex;
@@ -663,37 +681,38 @@ import { Subscription } from 'rxjs';
     }
     .view-toggle-group {
       display: flex;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid var(--border-subtle);
+      background: rgba(15, 23, 42, 0.6);
       border-radius: var(--radius-sm);
-      padding: 2px;
+      padding: 3px;
+      border: 1px solid var(--border-subtle);
     }
     .toggle-btn {
       display: flex;
       align-items: center;
       gap: 6px;
       padding: 6px 12px;
+      border-radius: 4px;
       border: none;
       background: transparent;
       color: var(--text-muted);
       font-size: 12px;
       font-weight: 600;
-      border-radius: 6px;
       cursor: pointer;
-      transition: all var(--transition-fast);
+      transition: all 0.2s;
     }
     .toggle-btn.active {
-      background: rgba(0, 242, 254, 0.15);
-      color: #00f2fe;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
     }
 
-    /* Kanban Layout */
+    /* Kanban Board */
     .kanban-board {
       display: grid;
-      grid-template-columns: repeat(5, minmax(260px, 1fr));
+      grid-template-columns: repeat(5, minmax(220px, 1fr));
       gap: 16px;
+      align-items: flex-start;
       overflow-x: auto;
-      padding-bottom: 8px;
+      padding-bottom: 12px;
     }
     .kanban-column {
       display: flex;
@@ -704,19 +723,17 @@ import { Subscription } from 'rxjs';
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 8px 12px;
-      background: rgba(12, 18, 34, 0.6);
-      border: 1px solid var(--border-subtle);
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.6);
       border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
     }
     .col-title {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
     }
     .stage-dot {
       width: 8px;
@@ -724,10 +741,10 @@ import { Subscription } from 'rxjs';
       border-radius: 50%;
     }
     .stage-draft { background: var(--text-muted); }
-    .stage-pending { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
-    .stage-approved { background: #00dfa2; box-shadow: 0 0 8px #00dfa2; }
-    .stage-portal { background: #00f2fe; box-shadow: 0 0 8px #00f2fe; }
-    .stage-won { background: #c084fc; box-shadow: 0 0 8px #c084fc; }
+    .stage-pending { background: #fbbf24; }
+    .stage-approved { background: #00dfa2; }
+    .stage-portal { background: #00f2fe; }
+    .stage-won { background: #7c3aed; }
 
     .cards-list {
       display: flex;
@@ -735,36 +752,40 @@ import { Subscription } from 'rxjs';
       gap: 12px;
     }
     .deal-card {
-      padding: 16px;
+      padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 8px;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
     .deal-card:hover {
       transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
     }
     .highlight-warning { border-left: 3px solid #fbbf24; }
     .highlight-success { border-left: 3px solid #00dfa2; }
-    .highlight-purple { border-left: 3px solid #c084fc; }
+    .highlight-purple { border-left: 3px solid #7c3aed; }
+
     .card-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
     .card-id {
-      font-size: 11px;
+      font-size: 12px;
+      color: #00f2fe;
       font-weight: 700;
-      color: var(--brand-primary);
     }
     .card-client {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-main);
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      margin: 0;
     }
     .card-value {
-      font-size: 20px;
+      font-size: 16px;
       font-weight: 800;
-      font-family: 'Outfit', sans-serif;
+      font-family: 'JetBrains Mono', monospace;
     }
     .card-progress {
       display: flex;
@@ -772,7 +793,7 @@ import { Subscription } from 'rxjs';
       gap: 4px;
     }
     .progress-bar-bg {
-      height: 6px;
+      height: 5px;
       background: rgba(255, 255, 255, 0.08);
       border-radius: 3px;
       overflow: hidden;
@@ -780,12 +801,12 @@ import { Subscription } from 'rxjs';
     .progress-fill {
       height: 100%;
       border-radius: 3px;
-      transition: width 0.4s ease;
     }
     .progress-labels {
       display: flex;
       justify-content: space-between;
-      font-size: 11px;
+      font-size: 10px;
+      color: var(--text-muted);
     }
     .card-footer {
       display: flex;
@@ -799,8 +820,17 @@ import { Subscription } from 'rxjs';
       font-size: 11px;
       color: var(--text-muted);
     }
+    .empty-column-notice {
+      padding: 20px 10px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: var(--radius-sm);
+      border: 1px dashed var(--border-subtle);
+    }
 
-    /* Table & Pagination */
+    /* Table Card */
     .table-card {
       padding: 0;
       overflow: hidden;
@@ -808,23 +838,50 @@ import { Subscription } from 'rxjs';
     .table-container {
       overflow-x: auto;
     }
+    .table-custom {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+    .table-custom th {
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(12, 18, 34, 0.6);
+      white-space: nowrap;
+    }
     .sortable-th {
       cursor: pointer;
       user-select: none;
-      transition: background 0.2s;
     }
     .sortable-th:hover {
-      background: rgba(59, 130, 246, 0.1);
-      color: #38bdf8;
+      color: #fff;
     }
     .sort-icon {
       font-size: 10px;
       margin-left: 4px;
-      color: #38bdf8;
+    }
+    .table-custom td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-sub);
+    }
+    .table-custom tbody tr:hover td {
+      background: rgba(255, 255, 255, 0.03);
+      color: #fff;
     }
     .quote-num {
+      color: #00f2fe;
       font-weight: 700;
-      color: #38bdf8;
+      text-decoration: none;
+    }
+    .quote-num:hover {
+      text-decoration: underline;
     }
     .customer-info {
       display: flex;
@@ -832,43 +889,45 @@ import { Subscription } from 'rxjs';
       gap: 8px;
     }
     .tier-tag {
-      font-size: 9px;
+      font-size: 10px;
+      padding: 2px 6px;
     }
     .row-actions {
       display: flex;
       gap: 6px;
     }
+    .empty-state-box {
+      padding: 30px;
+      text-align: center;
+    }
 
-    /* Pagination Bar */
+    /* Table Pagination Bar */
     .table-pagination-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
       padding: 12px 18px;
-      background: rgba(10, 15, 28, 0.85);
+      background: rgba(12, 18, 34, 0.6);
       border-top: 1px solid var(--border-subtle);
+      flex-wrap: wrap;
       gap: 12px;
-    }
-    .pagination-info {
-      font-size: 13px;
-      color: var(--text-sub);
+      font-size: 12px;
+      color: var(--text-muted);
     }
     .pagination-controls {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 14px;
     }
     .page-size-selector {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 12px;
+      gap: 6px;
     }
     .select-page-size {
-      width: 70px;
-      padding: 4px 8px;
-      font-size: 12px;
+      width: 60px;
+      padding: 2px 6px;
+      height: 28px;
     }
     .page-nav-buttons {
       display: flex;
@@ -876,10 +935,13 @@ import { Subscription } from 'rxjs';
       gap: 6px;
     }
     .page-number-display {
-      font-size: 12px;
-      color: var(--text-main);
-      padding: 0 8px;
+      padding: 0 6px;
       font-weight: 600;
+      color: #fff;
+    }
+    .btn-xs {
+      padding: 3px 8px;
+      font-size: 11px;
     }
   `]
 })
@@ -889,12 +951,9 @@ export class PipelineComponent implements OnInit, OnDestroy {
   anomalies: DealHealthFlag[] = [];
   pendingCount = 0;
 
-  // RBAC info
   currentRole = 'ADMIN';
-  currentUserName = 'Md Sadique Amin (Admin)';
-
-  // Filters & State
-  viewMode: 'kanban' | 'table' = 'table';
+  currentUserName = 'Administrator';
+  viewMode: 'kanban' | 'table' = 'kanban';
   selectedStatus = 'ALL';
   searchQuery = '';
 
@@ -913,10 +972,6 @@ export class PipelineComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    // Generate deterministic 120+ quotations
-    this.allQuotations = generate120Quotations();
-
-    // Subscribe to active persona changes
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
         this.currentRole = role;
@@ -941,31 +996,29 @@ export class PipelineComponent implements OnInit, OnDestroy {
   loadData(): void {
     this.quoteService.getQuotations().subscribe({
       next: (quotes) => {
-        if (quotes && quotes.length > 5) {
-          this.allQuotations = quotes;
-        }
+        this.allQuotations = quotes || [];
         this.applyRbacFilter();
       },
-      error: () => {
+      error: (err) => {
+        console.error('Failed to load quotations from API', err);
+        this.allQuotations = [];
         this.applyRbacFilter();
       }
     });
 
     this.healthService.getActiveFlags().subscribe({
       next: (flags) => {
-        if (flags && flags.length > 0) {
-          this.anomalies = flags;
-        } else {
-          this.anomalies = generate120HealthFlags(this.allQuotations).slice(0, 15);
-        }
+        this.anomalies = flags || [];
       },
-      error: () => {
-        this.anomalies = generate120HealthFlags(this.allQuotations).slice(0, 15);
+      error: (err) => {
+        console.error('Failed to load deal health flags', err);
+        this.anomalies = [];
       }
     });
   }
 
   applyRbacFilter(): void {
+    // Backend already scopes by role, but frontend double-checks role filtering safely
     this.quotations = this.authService.filterQuotationsByRole(this.allQuotations);
     this.pendingCount = this.quotations.filter(q => q.status === 'PENDING_APPROVAL').length;
     this.currentPage = 1;
@@ -973,21 +1026,21 @@ export class PipelineComponent implements OnInit, OnDestroy {
 
   get rbacScopeDescription(): string {
     if (this.currentRole === 'ADMIN') {
-      return 'Full Administrator View: Universal access to all 120+ enterprise opportunities across all teams.';
+      return 'Full Administrator View: Universal access to all enterprise opportunities across all teams.';
     }
     if (this.currentRole === 'SALES_REP') {
-      return `Scoped to ${this.currentUserName}: Can view only assigned opportunities. Other representatives' deals and executive policies are restricted.`;
+      return `Scoped to ${this.currentUserName}: Can view only assigned opportunities. Other representatives' deals are restricted.`;
     }
     if (this.currentRole === 'SALES_MANAGER') {
-      return 'Sales Manager View: Overview of all team pipelines and Level 1 governance approval requests.';
+      return 'Sales Manager View: Overview of team pipelines and Level 1 governance approval requests.';
     }
     if (this.currentRole === 'FINANCE') {
       return 'Finance & Operations View: Filtered to deals requiring second-level risk review or pending fulfillment.';
     }
     if (this.currentRole === 'CUSTOMER') {
-      return 'External Customer View: Scoped to Zenith Systems proposals with ZERO internal cost leakage.';
+      return 'External Customer View: Scoped to your organization proposals with zero internal cost leakage.';
     }
-    return 'Public Session';
+    return 'Active Session';
   }
 
   get totalPipelineValue(): number {
@@ -996,15 +1049,62 @@ export class PipelineComponent implements OnInit, OnDestroy {
 
   get averageMargin(): number {
     if (this.quotations.length === 0) return 0;
-    const total = this.quotations.reduce((sum, q) => sum + (q.marginPct || 0), 0);
+    const total = this.quotations.reduce((sum, q) => sum + this.getMargin(q), 0);
     return total / this.quotations.length;
   }
 
+  getMargin(q: Quotation): number {
+    return q.marginPct ?? q.marginPercentage ?? 0;
+  }
+
+  getDiscountPct(q: Quotation): number {
+    if (q.blendedDiscountPct != null) return q.blendedDiscountPct;
+    if (q.subtotalAmount && q.totalDiscountAmount) {
+      return (q.totalDiscountAmount / q.subtotalAmount) * 100;
+    }
+    return 0;
+  }
+
+  getRiskScore(q: Quotation): number {
+    return q.riskScore ?? q.blendedRiskScore ?? 0;
+  }
+
+  getRiskSeverity(q: Quotation): string {
+    if (q.riskSeverity) return q.riskSeverity;
+    const score = this.getRiskScore(q);
+    if (score >= 60) return 'CRITICAL';
+    if (score >= 35) return 'HIGH';
+    if (score >= 15) return 'MEDIUM';
+    return 'LOW';
+  }
+
+  getCustomerTierName(q: Quotation): string {
+    if (q.customer?.tier && typeof q.customer.tier === 'object') {
+      return (q.customer.tier as any).tierName || 'Standard';
+    }
+    if (typeof q.customer?.tier === 'string') {
+      return q.customer.tier;
+    }
+    return 'Standard';
+  }
+
   getStatusCount(status: string): number {
+    if (status === 'NEGOTIATION') {
+      return this.quotations.filter(q => q.status === 'UNDER_NEGOTIATION' || q.status === 'SENT_TO_CUSTOMER').length;
+    }
+    if (status === 'CONFIRMED') {
+      return this.quotations.filter(q => q.status === 'CONFIRMED' || q.status === 'ACCEPTED').length;
+    }
     return this.quotations.filter(q => q.status === status).length;
   }
 
   getQuotesByStage(stage: string): Quotation[] {
+    if (stage === 'NEGOTIATION') {
+      return this.quotations.filter(q => q.status === 'UNDER_NEGOTIATION' || q.status === 'SENT_TO_CUSTOMER');
+    }
+    if (stage === 'CONFIRMED') {
+      return this.quotations.filter(q => q.status === 'CONFIRMED' || q.status === 'ACCEPTED');
+    }
     return this.quotations.filter(q => q.status === stage);
   }
 
@@ -1036,12 +1136,22 @@ export class PipelineComponent implements OnInit, OnDestroy {
 
   get filteredQuotations(): Quotation[] {
     const qList = this.quotations.filter(q => {
-      const matchStatus = this.selectedStatus === 'ALL' || q.status === this.selectedStatus;
+      let matchStatus = true;
+      if (this.selectedStatus === 'ALL') {
+        matchStatus = true;
+      } else if (this.selectedStatus === 'NEGOTIATION') {
+        matchStatus = q.status === 'UNDER_NEGOTIATION' || q.status === 'SENT_TO_CUSTOMER';
+      } else if (this.selectedStatus === 'CONFIRMED') {
+        matchStatus = q.status === 'CONFIRMED' || q.status === 'ACCEPTED';
+      } else {
+        matchStatus = q.status === this.selectedStatus;
+      }
+
       const query = this.searchQuery.toLowerCase().trim();
       const matchSearch = !query ||
-        q.quoteNumber.toLowerCase().includes(query) ||
-        (q.customer.name && q.customer.name.toLowerCase().includes(query)) ||
-        (q.salesRep.name && q.salesRep.name.toLowerCase().includes(query));
+        (q.quoteNumber && q.quoteNumber.toLowerCase().includes(query)) ||
+        (q.customer?.name && q.customer.name.toLowerCase().includes(query)) ||
+        (q.salesRep?.name && q.salesRep.name.toLowerCase().includes(query));
       return matchStatus && matchSearch;
     });
 
@@ -1051,8 +1161,8 @@ export class PipelineComponent implements OnInit, OnDestroy {
 
       switch (this.sortColumn) {
         case 'quoteNumber':
-          aVal = a.quoteNumber;
-          bVal = b.quoteNumber;
+          aVal = a.quoteNumber || '';
+          bVal = b.quoteNumber || '';
           break;
         case 'customerName':
           aVal = a.customer?.name || '';
@@ -1063,20 +1173,20 @@ export class PipelineComponent implements OnInit, OnDestroy {
           bVal = b.salesRep?.name || '';
           break;
         case 'subtotalAmount':
-          aVal = a.subtotalAmount || 0;
-          bVal = b.subtotalAmount || 0;
+          aVal = a.subtotalAmount || a.totalAmount || 0;
+          bVal = b.subtotalAmount || b.totalAmount || 0;
           break;
         case 'blendedDiscountPct':
-          aVal = a.blendedDiscountPct || 0;
-          bVal = b.blendedDiscountPct || 0;
+          aVal = this.getDiscountPct(a);
+          bVal = this.getDiscountPct(b);
           break;
         case 'marginPct':
-          aVal = a.marginPct || 0;
-          bVal = b.marginPct || 0;
+          aVal = this.getMargin(a);
+          bVal = this.getMargin(b);
           break;
         case 'riskSeverity':
-          aVal = a.riskSeverity || '';
-          bVal = b.riskSeverity || '';
+          aVal = this.getRiskSeverity(a);
+          bVal = this.getRiskSeverity(b);
           break;
         case 'status':
           aVal = a.status || '';

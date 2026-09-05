@@ -1,4 +1,4 @@
-import { Quotation, Product, ApprovalRequest, FulfillmentSplit, DealHealthFlag, SubscriptionContract } from '../models/dealflow.model';
+import { Quotation, Product, ApprovalRequest, FulfillmentSplit, Warehouse, DealHealthFlag, SubscriptionContract } from '../models/dealflow.model';
 
 // Utility random generator helpers for deterministic 120+ enterprise records
 const CLIENT_COMPANIES = [
@@ -131,7 +131,7 @@ export function generate120Quotations(): Quotation[] {
           unitDiscountAmount: Math.round(MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].basePrice * (discPct / 100)),
           unitFinalPrice: Math.round(MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].basePrice * (1 - (discPct / 100))),
           lineTotal: Math.round(MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].basePrice * (1 - (discPct / 100)) * Math.max(1, (i % 8) * 3)),
-          lineCost: MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].unitCost * Math.max(1, (i % 8) * 3),
+          lineCost: (MOCK_PRODUCTS[i % MOCK_PRODUCTS.length].unitCost || 100) * Math.max(1, (i % 8) * 3),
           lineMarginPct: margin
         }
       ]
@@ -147,18 +147,18 @@ export function generate120Approvals(quotes: Quotation[]): ApprovalRequest[] {
     id: idx + 1,
     quotation: q,
     status: q.status === 'PENDING_APPROVAL' ? 'PENDING' : q.status === 'APPROVED' ? 'APPROVED' : 'PENDING',
-    currentLevel: q.blendedDiscountPct > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
-    maxLevel: q.blendedDiscountPct > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
-    requiredTier: q.blendedDiscountPct > 15 ? 'VP & CFO Sign-off' : 'Sales Manager Sign-off',
+    currentLevel: (q.blendedDiscountPct || 0) > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
+    maxLevel: (q.blendedDiscountPct || 0) > 15 ? 'LEVEL_2_FINANCE' : 'LEVEL_1_MANAGER',
+    requiredTier: (q.blendedDiscountPct || 0) > 15 ? 'VP & CFO Sign-off' : 'Sales Manager Sign-off',
     culpritLineBreakdownJson: JSON.stringify([
       {
         productName: q.lines[0]?.product.name || 'Ground Gateway 4U',
         lineTotal: q.totalAmount,
         revenueWeightPct: 65.4,
-        appliedDiscountPct: q.blendedDiscountPct,
+        appliedDiscountPct: q.blendedDiscountPct || 0,
         allowedThresholdPct: 15.0,
-        overagePct: Math.max(0, q.blendedDiscountPct - 15.0),
-        weightedContribution: Number((Math.max(0, q.blendedDiscountPct - 15.0) * 0.654).toFixed(2))
+        overagePct: Math.max(0, (q.blendedDiscountPct || 0) - 15.0),
+        weightedContribution: Number((Math.max(0, (q.blendedDiscountPct || 0) - 15.0) * 0.654).toFixed(2))
       }
     ]),
     steps: [
@@ -170,7 +170,7 @@ export function generate120Approvals(quotes: Quotation[]): ApprovalRequest[] {
         status: q.status === 'APPROVED' ? 'APPROVED' : 'PENDING',
         stepOrder: 1,
         slaDeadline: '2026-09-06T18:00:00Z',
-        comments: q.blendedDiscountPct > 10 ? 'Discount over category cap; requires VP concurrence.' : 'Within standard discretion.'
+        comments: (q.blendedDiscountPct || 0) > 10 ? 'Discount over category cap; requires VP concurrence.' : 'Within standard discretion.'
       }
     ]
   }));
@@ -178,7 +178,7 @@ export function generate120Approvals(quotes: Quotation[]): ApprovalRequest[] {
 
 // Generate 120 Fulfillment Inventory Splits
 export function generate120Splits(): FulfillmentSplit[] {
-  const warehouses = [
+  const warehouses: Warehouse[] = [
     { id: 1, name: 'Austin Central Gigafactory Hub', code: 'WH-ATX-01', locationCity: 'Austin, TX', region: 'North America South', baseFreightCost: 420, weightRatePerKg: 1.8, leadTimeDays: 2 },
     { id: 2, name: 'Chicago Great Lakes Depot', code: 'WH-CHI-02', locationCity: 'Chicago, IL', region: 'North America Central', baseFreightCost: 650, weightRatePerKg: 2.1, leadTimeDays: 3 },
     { id: 3, name: 'Frankfurt European Gateway', code: 'WH-FRA-03', locationCity: 'Frankfurt', region: 'Europe Core', baseFreightCost: 1100, weightRatePerKg: 3.4, leadTimeDays: 4 },
@@ -191,6 +191,7 @@ export function generate120Splits(): FulfillmentSplit[] {
     const prod = MOCK_PRODUCTS[(i - 1) % MOCK_PRODUCTS.length];
     const qty = Math.max(5, (i * 3) % 45);
     const backorder = i % 5 === 0 ? Math.round(qty * 0.25) : 0;
+
     splits.push({
       id: i,
       warehouse: wh,
@@ -217,13 +218,14 @@ export function generate120HealthFlags(quotes: Quotation[]): DealHealthFlag[] {
     const zScore = Number((1.8 + ((idx % 15) * 0.18)).toFixed(2));
     const days = 6 + (idx % 14);
 
+    const tierStr = q.customer.tier?.tierName || q.customer.tier || 'Enterprise Gold';
     let desc = '';
     if (fType === 'STATISTICAL_DISCOUNT_OUTLIER') {
-      desc = `Discount of ${q.blendedDiscountPct}% is ${zScore} standard deviations above median cohort for ${q.customer.tier.tierName}.`;
+      desc = `Discount of ${q.blendedDiscountPct || 0}% is ${zScore} standard deviations above median cohort for ${tierStr}.`;
     } else if (fType === 'STAGE_RESIDENCE_STALL') {
-      desc = `Opportunity has been stagnant in ${q.status.replace('_', ' ')} stage for ${days} days (> 7 days SLA target).`;
+      desc = `Opportunity has been stagnant in ${(q.status || 'DRAFT').replace('_', ' ')} stage for ${days} days (> 7 days SLA target).`;
     } else if (fType === 'MARGIN_DECAY_ANOMALY') {
-      desc = `Net gross margin of ${q.marginPct}% severely undercuts the ${q.customer.tier.tierName} target baseline of 35.0%.`;
+      desc = `Net gross margin of ${q.marginPct || 0}% severely undercuts the ${tierStr} target baseline of 35.0%.`;
     } else {
       desc = `Approval SLA threshold breached by ${idx * 4} minutes. Executive desk notification automatically routed.`;
     }
@@ -265,7 +267,7 @@ export function generate120Subscriptions(quotes: Quotation[]): SubscriptionContr
       id: idx + 1,
       contractNumber: `SUB-${2026}-${String(5000 + idx + 1).padStart(4, '0')}`,
       customerName: q.customer.name,
-      customerTier: q.customer.tier?.tierName || 'Enterprise Gold',
+      customerTier: q.customer.tier?.tierName || (typeof q.customer.tier === 'string' ? q.customer.tier : 'Enterprise Gold'),
       planName: plan.name,
       billingFrequency: plan.freq as any,
       seatsCount: seats,

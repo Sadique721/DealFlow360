@@ -12,6 +12,8 @@ import { CustomerPortalComponent } from './pages/customer-portal.component';
 import { SubscriptionBillingComponent } from './pages/subscription-billing.component';
 import { InvoicesComponent } from './pages/invoices.component';
 import { UserManagementComponent } from './pages/user-management.component';
+import { CatalogManagementComponent } from './pages/catalog-management.component';
+import { CustomerManagementComponent } from './pages/customer-management.component';
 import { UnauthorizedComponent } from './pages/unauthorized.component';
 import { authGuard } from './guards/auth.guard';
 import { roleGuard } from './guards/role.guard';
@@ -25,6 +27,22 @@ export const routes: Routes = [
   // Customer portal (public token-based or customer authenticated)
   { path: 'portal/:token', component: CustomerPortalComponent },
 
+  // Top-level aliases directly redirecting to dashboard equivalents
+  { path: 'pipeline', redirectTo: 'dashboard/pipeline', pathMatch: 'full' },
+  { path: 'quotes', redirectTo: 'dashboard/pipeline', pathMatch: 'full' },
+  { path: 'quotations', redirectTo: 'dashboard/pipeline', pathMatch: 'full' },
+  { path: 'quote/new', redirectTo: 'dashboard/quote/new', pathMatch: 'full' },
+  { path: 'quote/:id', redirectTo: 'dashboard/quote/:id' },
+  { path: 'approval', redirectTo: 'dashboard/approval', pathMatch: 'full' },
+  { path: 'approval/:id', redirectTo: 'dashboard/approval/:id' },
+  { path: 'fulfillment', redirectTo: 'dashboard/fulfillment', pathMatch: 'full' },
+  { path: 'fulfillment/:id', redirectTo: 'dashboard/fulfillment/:id' },
+  { path: 'subscription', redirectTo: 'dashboard/subscription', pathMatch: 'full' },
+  { path: 'invoices', redirectTo: 'dashboard/invoices', pathMatch: 'full' },
+  { path: 'deal-health', redirectTo: 'dashboard/deal-health', pathMatch: 'full' },
+  { path: 'catalog', redirectTo: 'dashboard/catalog', pathMatch: 'full' },
+  { path: 'customers', redirectTo: 'dashboard/customers', pathMatch: 'full' },
+
   // Protected dashboard shell
   {
     path: 'dashboard',
@@ -36,14 +54,16 @@ export const routes: Routes = [
         path: 'home',
         component: DashboardHomeComponent,
         canActivate: [roleGuard],
-        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE'] }
+        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE', 'CUSTOMER'] }
       },
       {
         path: 'pipeline',
         component: PipelineComponent,
         canActivate: [roleGuard],
-        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE'], module: 'quotations' }
+        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE', 'CUSTOMER'], module: 'quotations' }
       },
+      { path: 'quotes', redirectTo: 'pipeline', pathMatch: 'full' },
+      { path: 'quotations', redirectTo: 'pipeline', pathMatch: 'full' },
       {
         path: 'quote/new',
         component: QuoteBuilderComponent,
@@ -54,7 +74,7 @@ export const routes: Routes = [
         path: 'quote/:id',
         component: QuoteBuilderComponent,
         canActivate: [roleGuard],
-        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE'], module: 'quotations' }
+        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE', 'CUSTOMER'], module: 'quotations' }
       },
       {
         path: 'approval',
@@ -103,6 +123,18 @@ export const routes: Routes = [
         component: PipelineComponent,
         canActivate: [roleGuard],
         data: { roles: ['ADMIN', 'SALES_MANAGER', 'FINANCE'], module: 'reports' }
+      },
+      {
+        path: 'catalog',
+        component: CatalogManagementComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE'], module: 'catalog' }
+      },
+      {
+        path: 'customers',
+        component: CustomerManagementComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE'], module: 'customers' }
       },
       {
         path: 'users',

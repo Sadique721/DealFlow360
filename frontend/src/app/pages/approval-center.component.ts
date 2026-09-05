@@ -348,16 +348,16 @@ import { Subscription } from 'rxjs';
                         <div class="mono sku">{{ line.product.sku }} | {{ line.product.type }}</div>
                       </td>
                       <td>{{ line.quantity }}</td>
-                      <td>{{ formatCurrency(line.unitListPrice) }}</td>
+                      <td>{{ formatCurrency(line.unitListPrice || line.product.basePrice) }}</td>
                       <td>
-                        <span [class.text-danger]="line.unitDiscountPct > 15" class="mono font-semibold">
-                          {{ line.unitDiscountPct | number:'1.1-1' }}%
+                        <span [class.text-danger]="(line.unitDiscountPct || 0) > 15" class="mono font-semibold">
+                          {{ (line.unitDiscountPct || 0) | number:'1.1-1' }}%
                         </span>
                       </td>
                       <td class="mono font-bold">{{ formatCurrency(line.lineTotal) }}</td>
                       <td>
-                        <span class="badge" [class.badge-success]="line.lineMarginPct >= 30" [class.badge-warning]="line.lineMarginPct >= 18 && line.lineMarginPct < 30" [class.badge-danger]="line.lineMarginPct < 18">
-                          {{ line.lineMarginPct | number:'1.1-1' }}%
+                        <span class="badge" [class.badge-success]="(line.lineMarginPct || 0) >= 30" [class.badge-warning]="(line.lineMarginPct || 0) >= 18 && (line.lineMarginPct || 0) < 30" [class.badge-danger]="(line.lineMarginPct || 0) < 18">
+                          {{ (line.lineMarginPct || 0) | number:'1.1-1' }}%
                         </span>
                       </td>
                     </tr>
@@ -953,7 +953,7 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
     }
   }
 
-  formatCurrency(val: number): string {
+  formatCurrency(val?: number): string {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0);
   }
 }

@@ -1,436 +1,516 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
 import { QuotationService } from '../services/quotation.service';
 import { CatalogService } from '../services/catalog.service';
-import { Quotation, QuotationLine, Product, Customer, RiskCalculationResult, UpsellSuggestion } from '../models/dealflow.model';
-import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
+import { AuthService } from '../services/auth.service';
+import {
+  Quotation,
+  QuotationLine,
+  Product,
+  Customer,
+  PriceList,
+  LineItemRequest,
+  UpsellSuggestion
+} from '../models/dealflow.model';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-quote-builder',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterModule],
   template: `
-    <div class="builder-container" *ngIf="quote">
-      <!-- Breadcrumb & Top Bar -->
-      <div class="top-nav glass-panel">
-        <div class="nav-left">
-          <a routerLink="/dashboard/pipeline" class="back-link">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
-            Pipeline
-          </a>
-          <span class="divider">/</span>
-          <span class="quote-id mono">{{ quote.quoteNumber }}</span>
-          <span
-            class="badge"
-            [class.badge-warning]="quote.status === 'PENDING_APPROVAL'"
-            [class.badge-success]="quote.status === 'APPROVED' || quote.status === 'CONFIRMED' || quote.status === 'ACCEPTED'"
-            [class.badge-neutral]="quote.status === 'DRAFT'"
-            [class.badge-info]="quote.status === 'SENT_TO_CUSTOMER'"
-          >
-            {{ quote.status.replace('_', ' ') }}
-          </span>
-        </div>
-
-        <div class="nav-actions">
-          <!-- Preset Scenarios for Hackathon Live Demo -->
-          <div class="scenario-buttons">
-            <span class="scenario-label desktop-only">Quick Demo Presets:</span>
-            <button class="btn btn-outline btn-sm" (click)="applyPreset('safe')" title="Standard safe discount with >35% margin">
-              🟢 Safe Deal (>35%)
-            </button>
-            <button class="btn btn-outline btn-sm" (click)="applyPreset('aggressive')" title="Capex spike triggering Manager & VP review">
-              🟡 Manager Escalation
-            </button>
-            <button class="btn btn-outline btn-sm" (click)="applyPreset('critical')" title="Severe discount erosion triggering CFO desk">
-              🔴 CFO Emergency Desk
-            </button>
-          </div>
-
-          <a *ngIf="quote.id" [routerLink]="['/fulfillment', quote.id]" class="btn btn-outline btn-sm">
-            Warehouse Splits
-          </a>
-
-          <button
-            *ngIf="quote.status === 'DRAFT' || quote.status === 'UNDER_NEGOTIATION'"
-            class="btn btn-primary btn-sm"
-            (click)="submitForApproval()"
-          >
-            Submit for Approval 🚀
-          </button>
-
-          <button
-            *ngIf="quote.status === 'APPROVED'"
-            class="btn btn-success btn-sm"
-            (click)="confirmOrder()"
-          >
-            Convert to Sales Order ✓
-          </button>
-        </div>
+    <div class="builder-container">
+      <!-- Top Cyber Alert / Toast Message -->
+      <div *ngIf="alertMessage" class="glass-panel alert-toast" [class.alert-success]="alertType === 'success'" [class.alert-danger]="alertType === 'error'" [class.alert-info]="alertType === 'info'">
+        <span class="alert-icon">{{ alertType === 'success' ? '✓' : alertType === 'error' ? '⚠️' : 'ℹ️' }}</span>
+        <span>{{ alertMessage }}</span>
+        <button class="alert-close" (click)="alertMessage = null">✕</button>
       </div>
 
-      <!-- Main Dual-Pane Workspace Grid -->
-      <div class="builder-grid">
-        <!-- Left: Line Items (Hybrid Capex & Opex Split) -->
-        <div class="main-column">
-          <!-- Customer & Header Info -->
-          <div class="glass-panel customer-panel">
-            <div class="panel-row">
-              <div class="client-meta">
-                <span class="client-label">Enterprise Customer:</span>
-                <h3>{{ quote.customer.name }}</h3>
-                <span class="badge badge-purple">{{ quote.customer.tier.tierName }}</span>
-                <span class="destination-tag">📍 {{ quote.customer.destinationRegion || 'North America West' }}</span>
-              </div>
+      <!-- Loading / Error State -->
+      <div *ngIf="isLoading" class="glass-panel loading-box">
+        <div class="spinner"></div>
+        <p>Connecting to DealFlow360 Quotation Engine...</p>
+      </div>
 
-              <div class="deal-meta">
-                <div>Sales Rep: <strong>{{ quote.salesRep.name }}</strong></div>
-                <div>Created: <span class="mono">{{ (quote.createdAt || now) | date:'mediumDate' }}</span></div>
-                <div>Target Delivery: <span class="mono">{{ quote.promisedDeliveryDate || '2026-09-28' }}</span></div>
-              </div>
-            </div>
+      <div *ngIf="errorMessage && !isLoading" class="glass-panel error-box">
+        <div class="error-icon">⚠️</div>
+        <h3>Quotation Error</h3>
+        <p>{{ errorMessage }}</p>
+        <a routerLink="/dashboard/pipeline" class="btn btn-primary btn-sm mt-3">Back to Pipeline</a>
+      </div>
+
+      <ng-container *ngIf="!isLoading && !errorMessage">
+        <!-- Breadcrumb & Top Bar -->
+        <div class="top-nav glass-panel">
+          <div class="nav-left">
+            <a routerLink="/dashboard/pipeline" class="back-link">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+              Pipeline
+            </a>
+            <span class="divider">/</span>
+            <span class="quote-id mono">{{ isCreateMode ? 'New Quotation' : (quote?.quoteNumber || 'Quotation') }}</span>
+            <span
+              *ngIf="!isCreateMode && quote"
+              class="badge"
+              [class.badge-warning]="quote.status === 'PENDING_APPROVAL'"
+              [class.badge-success]="quote.status === 'APPROVED' || quote.status === 'CONFIRMED' || quote.status === 'ACCEPTED'"
+              [class.badge-neutral]="quote.status === 'DRAFT'"
+              [class.badge-info]="quote.status === 'SENT_TO_CUSTOMER' || quote.status === 'UNDER_NEGOTIATION'"
+            >
+              {{ (quote.status || 'DRAFT').replace('_', ' ') }}
+            </span>
           </div>
 
-          <!-- Add Product to Cart Selector -->
-          <div class="glass-panel product-picker-panel">
-            <div class="picker-row">
-              <div class="picker-dropdown">
-                <label class="form-label">Catalog Selector (120+ Enterprise Products)</label>
-                <select class="form-control" [(ngModel)]="selectedProductId">
-                  <option [ngValue]="null">-- Select hardware, cloud subscription, or services --</option>
-                  <option *ngFor="let p of availableProducts" [ngValue]="p.id">
-                    [{{ p.type }}] {{ p.name }} ({{ formatCurrency(p.basePrice) }}) — Max Disc: {{ p.category.maxDiscountCeilingPct || 15 }}%
-                  </option>
-                </select>
-              </div>
-
-              <button class="btn btn-primary" [disabled]="!selectedProductId" (click)="addLineItem()">
-                + Add Line Item
+          <div class="nav-actions">
+            <!-- Preset Scenarios for Hackathon Live Demo -->
+            <div class="scenario-buttons" *ngIf="isEditable">
+              <span class="scenario-label desktop-only">Quick Demo Presets:</span>
+              <button class="btn btn-outline btn-sm" (click)="applyPreset('safe')" title="Standard safe discount with >35% margin">
+                🟢 Safe Deal (>35%)
+              </button>
+              <button class="btn btn-outline btn-sm" (click)="applyPreset('aggressive')" title="Discount spike triggering Manager review">
+                🟡 Manager Review
+              </button>
+              <button class="btn btn-outline btn-sm" (click)="applyPreset('critical')" title="Severe discount erosion triggering CFO desk">
+                🔴 CFO Emergency
               </button>
             </div>
-          </div>
 
-          <!-- SECTION 1: ONE-TIME HARDWARE & PROFESSIONAL SERVICES (CAPEX) -->
-          <div class="glass-panel items-panel">
-            <div class="panel-header">
-              <div class="section-title">
-                <span class="badge badge-info">CAPEX</span>
-                <h4>One-Time Hardware & Engineering Services ({{ capexLines.length }} lines)</h4>
-              </div>
-              <span class="mono total-pill">Subtotal: {{ formatCurrency(capexSubtotal) }}</span>
-            </div>
+            <a *ngIf="quote?.id" [routerLink]="['/dashboard/fulfillment', quote?.id]" class="btn btn-outline btn-sm">
+              Warehouse Splits
+            </a>
 
-            <div class="table-container">
-              <table class="table-custom">
-                <thead>
-                  <tr>
-                    <th>Product & SKU</th>
-                    <th>Category Cap</th>
-                    <th style="width: 90px;">Quantity</th>
-                    <th>List Price</th>
-                    <th style="width: 130px;">Discount %</th>
-                    <th>Net Price</th>
-                    <th>Gross Margin</th>
-                    <th>Line Total</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr *ngFor="let line of capexLines; let i = index">
-                    <td>
-                      <div class="prod-info">
-                        <strong>{{ line.product.name }}</strong>
-                        <span class="mono sku">{{ line.product.sku }} | {{ line.product.type }}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span class="badge badge-neutral">
-                        Max {{ line.product.category.maxDiscountCeilingPct || 15 }}%
-                      </span>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        min="1"
-                        class="form-control text-center"
-                        [(ngModel)]="line.quantity"
-                        (change)="recomputeLine(line)"
-                      />
-                    </td>
-                    <td class="mono">{{ formatCurrency(line.unitListPrice) }}</td>
-                    <td>
-                      <div class="discount-input-wrapper">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.5"
-                          class="form-control text-center"
-                          [(ngModel)]="line.unitDiscountPct"
-                          (input)="recomputeLine(line)"
-                          [class.input-overage]="isOverage(line)"
-                        />
-                        <span *ngIf="isOverage(line)" class="overage-flag" title="Exceeds category ceiling! Needs approval.">⚠️</span>
-                      </div>
-                    </td>
-                    <td class="mono font-semibold">{{ formatCurrency(line.unitFinalPrice) }}</td>
-                    <td>
-                      <span class="badge" [style.background]="getMarginBadgeBg(line.lineMarginPct)" [style.color]="getMarginColor(line.lineMarginPct)">
-                        {{ line.lineMarginPct | number:'1.1-1' }}%
-                      </span>
-                    </td>
-                    <td class="mono font-bold">{{ formatCurrency(line.lineTotal) }}</td>
-                    <td>
-                      <button class="btn-icon-delete" (click)="removeLine(line)" title="Remove item">✕</button>
-                    </td>
-                  </tr>
-                  <tr *ngIf="capexLines.length === 0">
-                    <td colspan="9" class="text-center empty-notice">
-                      No one-time hardware lines added. Pick an item above or apply a demo preset.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+            <!-- Save Draft Button -->
+            <button
+              *ngIf="isEditable && currentRole !== 'CUSTOMER'"
+              class="btn btn-outline btn-sm"
+              (click)="saveDraft()"
+              [disabled]="isSaving || (!isCreateMode && lines.length === 0)"
+            >
+              {{ isSaving ? 'Saving...' : 'Save Draft 💾' }}
+            </button>
 
-          <!-- SECTION 2: RECURRING CLOUD & AI SUBSCRIPTIONS (OPEX) -->
-          <div class="glass-panel items-panel">
-            <div class="panel-header">
-              <div class="section-title">
-                <span class="badge badge-purple">OPEX</span>
-                <h4>Recurring SaaS & Cloud Subscriptions ({{ opexLines.length }} lines)</h4>
-              </div>
-              <span class="mono total-pill">Recurring ARR/MRR: {{ formatCurrency(opexSubtotal) }}</span>
-            </div>
+            <!-- Submit for Approval Button -->
+            <button
+              *ngIf="!isCreateMode && quote && (quote.status === 'DRAFT' || quote.status === 'UNDER_NEGOTIATION' || quote.status === 'RETURNED') && currentRole !== 'CUSTOMER'"
+              class="btn btn-primary btn-sm"
+              (click)="submitForApproval()"
+              [disabled]="isSubmitting || lines.length === 0"
+            >
+              {{ isSubmitting ? 'Submitting...' : 'Submit for Approval 🚀' }}
+            </button>
 
-            <div class="table-container">
-              <table class="table-custom">
-                <thead>
-                  <tr>
-                    <th>Subscription Plan</th>
-                    <th>Cadence</th>
-                    <th style="width: 90px;">Seats / Qty</th>
-                    <th>Rate / Month</th>
-                    <th style="width: 130px;">Discount %</th>
-                    <th>Net Rate</th>
-                    <th>Subscription Margin</th>
-                    <th>Annualized Total</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr *ngFor="let line of opexLines; let i = index">
-                    <td>
-                      <div class="prod-info">
-                        <strong>{{ line.product.name }}</strong>
-                        <span class="mono sku">{{ line.product.sku }} | Auto-Prorated</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span class="badge badge-purple">{{ line.product.billingFrequency || 'ANNUAL' }}</span>
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        min="1"
-                        class="form-control text-center"
-                        [(ngModel)]="line.quantity"
-                        (change)="recomputeLine(line)"
-                      />
-                    </td>
-                    <td class="mono">{{ formatCurrency(line.unitListPrice) }}</td>
-                    <td>
-                      <div class="discount-input-wrapper">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.5"
-                          class="form-control text-center"
-                          [(ngModel)]="line.unitDiscountPct"
-                          (input)="recomputeLine(line)"
-                          [class.input-overage]="isOverage(line)"
-                        />
-                        <span *ngIf="isOverage(line)" class="overage-flag">⚠️</span>
-                      </div>
-                    </td>
-                    <td class="mono font-semibold">{{ formatCurrency(line.unitFinalPrice) }}</td>
-                    <td>
-                      <span class="badge badge-success">
-                        {{ line.lineMarginPct | number:'1.1-1' }}%
-                      </span>
-                    </td>
-                    <td class="mono font-bold">{{ formatCurrency(line.lineTotal) }}</td>
-                    <td>
-                      <button class="btn-icon-delete" (click)="removeLine(line)" title="Remove subscription">✕</button>
-                    </td>
-                  </tr>
-                  <tr *ngIf="opexLines.length === 0">
-                    <td colspan="9" class="text-center empty-notice">
-                      No recurring subscriptions attached. Pick a cloud plan to enable hybrid billing.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- UPSELL & CROSS-SELL INTELLIGENCE PANEL (B5 in PDF) -->
-          <div class="glass-panel upsell-panel" *ngIf="upsells.length > 0">
-            <div class="upsell-header">
-              <span class="upsell-sparkle">✨</span>
-              <div>
-                <h4>Live AI Upsell & Margin Booster Suggestions</h4>
-                <p class="sub">Ranked recommendations based on historical co-purchase patterns with positive margin delta</p>
-              </div>
-            </div>
-
-            <div class="upsell-cards">
-              <div class="glass-panel upsell-card" *ngFor="let u of upsells">
-                <div class="upsell-card-top">
-                  <span class="badge badge-info">{{ u.ruleName || 'Recommended Bundle' }}</span>
-                  <span class="badge badge-success">+{{ u.marginImpactPct || 4.5 }}% Margin Delta</span>
-                </div>
-                <h5>{{ u.recommendedProduct?.name || u.suggestedProduct?.name || 'Mission Critical Support' }}</h5>
-                <p class="upsell-desc">{{ u.explanation || u.benefitDescription }}</p>
-                <div class="upsell-actions">
-                  <span class="mono upsell-val">+{{ formatCurrency(u.revenueImpact || 16200) }} ACV</span>
-                  <button class="btn btn-success btn-sm" (click)="acceptUpsell(u)">
-                    + Add to Quotation
-                  </button>
-                </div>
-              </div>
-            </div>
+            <!-- Convert to Sales Order Button -->
+            <button
+              *ngIf="!isCreateMode && quote && quote.status === 'APPROVED' && currentRole !== 'CUSTOMER'"
+              class="btn btn-success btn-sm"
+              (click)="confirmOrder()"
+              [disabled]="isConfirming"
+            >
+              {{ isConfirming ? 'Processing...' : 'Convert to Sales Order ✓' }}
+            </button>
           </div>
         </div>
 
-        <!-- Right: Real-time Live Margin Gauge & Risk Radar -->
-        <div class="sidebar-column">
-          <!-- LIVE MARGIN GAUGE CARD -->
-          <div class="glass-panel gauge-card">
-            <div class="gauge-header">
-              <h3>Live Margin Health Gauge</h3>
-              <span class="badge" [class.badge-success]="quote.marginPct >= 30" [class.badge-warning]="quote.marginPct >= 18 && quote.marginPct < 30" [class.badge-danger]="quote.marginPct < 18">
-                {{ quote.marginPct >= 30 ? 'Target Healthy' : quote.marginPct >= 18 ? 'Margin At Risk' : 'Severe Margin Erosion' }}
-              </span>
+        <!-- Main Dual-Pane Workspace Grid -->
+        <div class="builder-grid">
+          <!-- Left: Line Items (Hybrid Capex & Opex Split) -->
+          <div class="main-column">
+            <!-- Header Configuration / Customer Info Panel -->
+            <div class="glass-panel customer-panel">
+              <!-- Create Mode Form Fields -->
+              <div *ngIf="isCreateMode" class="create-meta-grid">
+                <div class="form-group">
+                  <label class="form-label">Enterprise Customer *</label>
+                  <select class="form-control" [(ngModel)]="selectedCustomerId" (change)="onCustomerSelected()">
+                    <option [ngValue]="null">-- Select Customer Account --</option>
+                    <option *ngFor="let c of availableCustomers" [ngValue]="c.id">
+                      {{ c.name }} ({{ getCustomerTierString(c) }})
+                    </option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Price List Rule *</label>
+                  <select class="form-control" [(ngModel)]="selectedPriceListId">
+                    <option *ngFor="let pl of availablePriceLists" [ngValue]="pl.id">
+                      {{ pl.customerTier }} Tier ({{ pl.currency }} - {{ pl.discountAdjustmentPercent }}% base adj)
+                    </option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Target Delivery Date</label>
+                  <input type="date" class="form-control" [(ngModel)]="targetDeliveryDate" />
+                </div>
+              </div>
+
+              <!-- Detail / Edit Mode View -->
+              <div *ngIf="!isCreateMode && quote" class="panel-row">
+                <div class="client-meta">
+                  <span class="client-label">Enterprise Customer:</span>
+                  <h3>{{ quote.customer?.name || 'Customer' }}</h3>
+                  <span class="badge badge-purple">{{ getCustomerTierName(quote) }}</span>
+                  <span class="destination-tag">📍 {{ quote.customer?.address || 'North America Region' }}</span>
+                </div>
+
+                <div class="deal-meta">
+                  <div>Sales Rep: <strong>{{ quote.salesRep?.name || currentUserName }}</strong></div>
+                  <div>Created: <span class="mono">{{ (quote.lastActivityAt || now) | date:'mediumDate' }}</span></div>
+                  <div>Target Delivery: <span class="mono">{{ quote.promisedDeliveryDate || '2026-09-30' }}</span></div>
+                </div>
+              </div>
             </div>
 
-            <div class="gauge-wrapper">
-              <svg class="gauge-svg" viewBox="0 0 200 120">
-                <!-- Background track arc -->
-                <path
-                  d="M 20 100 A 80 80 0 0 1 180 100"
-                  fill="none"
-                  stroke="rgba(255, 255, 255, 0.08)"
-                  stroke-width="14"
-                  stroke-linecap="round"
-                />
-                <!-- Active dynamic progress arc -->
-                <path
-                  d="M 20 100 A 80 80 0 0 1 180 100"
-                  fill="none"
-                  [attr.stroke]="getMarginColor(quote.marginPct)"
-                  stroke-width="14"
-                  stroke-linecap="round"
-                  stroke-dasharray="251.2"
-                  [attr.stroke-dashoffset]="calculateDashOffset(quote.marginPct)"
-                  style="transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;"
-                />
-              </svg>
+            <!-- Add Product to Cart Selector -->
+            <div class="glass-panel product-picker-panel" *ngIf="isEditable">
+              <div class="picker-row">
+                <div class="picker-dropdown">
+                  <label class="form-label">Add Product to Quotation</label>
+                  <select class="form-control" [(ngModel)]="selectedProductId">
+                    <option [ngValue]="null">-- Select Hardware, Cloud Subscription, or Engineering Service --</option>
+                    <option *ngFor="let p of availableProducts" [ngValue]="p.id">
+                      [{{ p.type || (p.isSubscription ? 'SUBSCRIPTION' : 'PRODUCT') }}] {{ p.name }} ({{ formatCurrency(p.basePrice) }}) — Max Disc: {{ p.category?.maxDiscountCeilingPct || p.category?.maxDiscountPercent || 15 }}%
+                    </option>
+                  </select>
+                </div>
 
-              <div class="gauge-center">
-                <span class="gauge-val" [style.color]="getMarginColor(quote.marginPct)">
-                  {{ quote.marginPct | number:'1.1-1' }}%
+                <button class="btn btn-primary" [disabled]="!selectedProductId" (click)="addLineItem()">
+                  + Add Line Item
+                </button>
+              </div>
+            </div>
+
+            <!-- SECTION 1: ONE-TIME HARDWARE & PROFESSIONAL SERVICES (CAPEX) -->
+            <div class="glass-panel items-panel">
+              <div class="panel-header">
+                <div class="section-title">
+                  <span class="badge badge-info">CAPEX</span>
+                  <h4>One-Time Hardware & Engineering Services ({{ capexLines.length }} lines)</h4>
+                </div>
+                <span class="mono total-pill">Subtotal: {{ formatCurrency(capexSubtotal) }}</span>
+              </div>
+
+              <div class="table-container">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>Product & SKU</th>
+                      <th>Category Cap</th>
+                      <th style="width: 90px;">Quantity</th>
+                      <th>List Price</th>
+                      <th style="width: 130px;">Discount %</th>
+                      <th>Net Price</th>
+                      <th>Gross Margin</th>
+                      <th>Line Total</th>
+                      <th *ngIf="isEditable"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let line of capexLines; let i = index">
+                      <td>
+                        <div class="prod-info">
+                          <strong>{{ line.product?.name }}</strong>
+                          <span class="mono sku">{{ line.product?.sku || ('PRD-' + line.product?.id) }} | {{ line.product?.unitOfMeasure || 'Unit' }}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="badge badge-neutral">
+                          Max {{ line.product?.category?.maxDiscountCeilingPct || line.product?.category?.maxDiscountPercent || 15 }}%
+                        </span>
+                      </td>
+                      <td>
+                        <input
+                          *ngIf="isEditable"
+                          type="number"
+                          min="1"
+                          class="form-control text-center"
+                          [(ngModel)]="line.quantity"
+                          (change)="recomputeLine(line)"
+                        />
+                        <span *ngIf="!isEditable" class="mono font-semibold">{{ line.quantity }}</span>
+                      </td>
+                      <td class="mono">{{ formatCurrency(getLineListPrice(line)) }}</td>
+                      <td>
+                        <div class="discount-input-wrapper" *ngIf="isEditable">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.5"
+                            class="form-control text-center"
+                            [(ngModel)]="line.unitDiscountPct"
+                            (input)="recomputeLine(line)"
+                            [class.input-overage]="isOverage(line)"
+                          />
+                          <span *ngIf="isOverage(line)" class="overage-flag" title="Exceeds category ceiling! Needs approval.">⚠️</span>
+                        </div>
+                        <span *ngIf="!isEditable" class="mono">{{ line.unitDiscountPct || 0 }}%</span>
+                      </td>
+                      <td class="mono font-semibold">{{ formatCurrency(line.unitFinalPrice || getLineListPrice(line)) }}</td>
+                      <td>
+                        <span class="badge" [style.background]="getMarginBadgeBg(line.lineMarginPct || 0)" [style.color]="getMarginColor(line.lineMarginPct || 0)">
+                          {{ (line.lineMarginPct || 0) | number:'1.1-1' }}%
+                        </span>
+                      </td>
+                      <td class="mono font-bold">{{ formatCurrency(line.lineTotal) }}</td>
+                      <td *ngIf="isEditable">
+                        <button class="btn-icon-delete" (click)="removeLine(line)" title="Remove item">✕</button>
+                      </td>
+                    </tr>
+                    <tr *ngIf="capexLines.length === 0">
+                      <td [attr.colspan]="isEditable ? 9 : 8" class="text-center empty-notice">
+                        No one-time hardware lines added. Pick an item above to add.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- SECTION 2: RECURRING CLOUD & AI SUBSCRIPTIONS (OPEX) -->
+            <div class="glass-panel items-panel">
+              <div class="panel-header">
+                <div class="section-title">
+                  <span class="badge badge-purple">OPEX</span>
+                  <h4>Recurring SaaS & Cloud Subscriptions ({{ opexLines.length }} lines)</h4>
+                </div>
+                <span class="mono total-pill">Recurring Total: {{ formatCurrency(opexSubtotal) }}</span>
+              </div>
+
+              <div class="table-container">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>Subscription Plan</th>
+                      <th>Cadence</th>
+                      <th style="width: 90px;">Seats / Qty</th>
+                      <th>Rate / Period</th>
+                      <th style="width: 130px;">Discount %</th>
+                      <th>Net Rate</th>
+                      <th>Subscription Margin</th>
+                      <th>Annualized Total</th>
+                      <th *ngIf="isEditable"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let line of opexLines; let i = index">
+                      <td>
+                        <div class="prod-info">
+                          <strong>{{ line.product?.name }}</strong>
+                          <span class="mono sku">{{ line.product?.sku || ('SUB-' + line.product?.id) }} | Auto-Prorated</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span class="badge badge-purple">{{ line.product?.recurringInterval || line.product?.billingFrequency || 'MONTHLY' }}</span>
+                      </td>
+                      <td>
+                        <input
+                          *ngIf="isEditable"
+                          type="number"
+                          min="1"
+                          class="form-control text-center"
+                          [(ngModel)]="line.quantity"
+                          (change)="recomputeLine(line)"
+                        />
+                        <span *ngIf="!isEditable" class="mono font-semibold">{{ line.quantity }}</span>
+                      </td>
+                      <td class="mono">{{ formatCurrency(getLineListPrice(line)) }}</td>
+                      <td>
+                        <div class="discount-input-wrapper" *ngIf="isEditable">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.5"
+                            class="form-control text-center"
+                            [(ngModel)]="line.unitDiscountPct"
+                            (input)="recomputeLine(line)"
+                            [class.input-overage]="isOverage(line)"
+                          />
+                          <span *ngIf="isOverage(line)" class="overage-flag">⚠️</span>
+                        </div>
+                        <span *ngIf="!isEditable" class="mono">{{ line.unitDiscountPct || 0 }}%</span>
+                      </td>
+                      <td class="mono font-semibold">{{ formatCurrency(line.unitFinalPrice || getLineListPrice(line)) }}</td>
+                      <td>
+                        <span class="badge badge-success">
+                          {{ (line.lineMarginPct || 0) | number:'1.1-1' }}%
+                        </span>
+                      </td>
+                      <td class="mono font-bold">{{ formatCurrency(line.lineTotal) }}</td>
+                      <td *ngIf="isEditable">
+                        <button class="btn-icon-delete" (click)="removeLine(line)" title="Remove subscription">✕</button>
+                      </td>
+                    </tr>
+                    <tr *ngIf="opexLines.length === 0">
+                      <td [attr.colspan]="isEditable ? 9 : 8" class="text-center empty-notice">
+                        No recurring subscriptions attached. Pick a cloud plan above to enable hybrid billing.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- UPSELL & CROSS-SELL INTELLIGENCE PANEL -->
+            <div class="glass-panel upsell-panel" *ngIf="upsells.length > 0 && isEditable">
+              <div class="upsell-header">
+                <span class="upsell-sparkle">✨</span>
+                <div>
+                  <h4>Live AI Upsell & Margin Booster Suggestions</h4>
+                  <p class="sub">Ranked recommendations based on historical co-purchase patterns with positive margin delta</p>
+                </div>
+              </div>
+
+              <div class="upsell-cards">
+                <div class="glass-panel upsell-card" *ngFor="let u of upsells">
+                  <div class="upsell-card-top">
+                    <span class="badge badge-info">{{ u.ruleName || 'Recommended Bundle' }}</span>
+                    <span class="badge badge-success">+{{ u.marginImpactPct || 4.5 }}% Margin Delta</span>
+                  </div>
+                  <h5>{{ u.recommendedProduct?.name || u.suggestedProduct?.name || 'Recommended Add-on' }}</h5>
+                  <p class="upsell-desc">{{ u.explanation || u.benefitDescription }}</p>
+                  <div class="upsell-actions">
+                    <span class="mono upsell-val">+{{ formatCurrency(u.revenueImpact || 1200) }} Value</span>
+                    <button class="btn btn-success btn-sm" (click)="acceptUpsell(u)">
+                      + Add to Quotation
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Real-time Live Margin Gauge & Risk Radar -->
+          <div class="sidebar-column">
+            <!-- LIVE MARGIN GAUGE CARD -->
+            <div class="glass-panel gauge-card">
+              <div class="gauge-header">
+                <h3>Live Margin Health Gauge</h3>
+                <span class="badge" [class.badge-success]="currentMargin >= 30" [class.badge-warning]="currentMargin >= 18 && currentMargin < 30" [class.badge-danger]="currentMargin < 18">
+                  {{ currentMargin >= 30 ? 'Target Healthy' : currentMargin >= 18 ? 'Margin At Risk' : 'Severe Margin Erosion' }}
                 </span>
-                <span class="gauge-lbl">Net Blended Gross Margin</span>
+              </div>
+
+              <div class="gauge-wrapper">
+                <svg class="gauge-svg" viewBox="0 0 200 120">
+                  <!-- Background track arc -->
+                  <path
+                    d="M 20 100 A 80 80 0 0 1 180 100"
+                    fill="none"
+                    stroke="rgba(255, 255, 255, 0.08)"
+                    stroke-width="14"
+                    stroke-linecap="round"
+                  />
+                  <!-- Active dynamic progress arc -->
+                  <path
+                    d="M 20 100 A 80 80 0 0 1 180 100"
+                    fill="none"
+                    [attr.stroke]="getMarginColor(currentMargin)"
+                    stroke-width="14"
+                    stroke-linecap="round"
+                    stroke-dasharray="251.2"
+                    [attr.stroke-dashoffset]="calculateDashOffset(currentMargin)"
+                    style="transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;"
+                  />
+                </svg>
+
+                <div class="gauge-center">
+                  <span class="gauge-val" [style.color]="getMarginColor(currentMargin)">
+                    {{ currentMargin | number:'1.1-1' }}%
+                  </span>
+                  <span class="gauge-lbl">Net Blended Gross Margin</span>
+                </div>
+              </div>
+
+              <div class="gauge-thresholds">
+                <span class="text-danger">0% Critical</span>
+                <span class="text-warning">18% Minimum</span>
+                <span class="text-emerald">30%+ Target</span>
               </div>
             </div>
 
-            <div class="gauge-thresholds">
-              <span class="text-danger">0% Critical</span>
-              <span class="text-warning">20% Tier 1</span>
-              <span class="text-emerald">35%+ Target</span>
-            </div>
-          </div>
-
-          <!-- BLENDED RISK SCORE BREAKDOWN CARD -->
-          <div class="glass-panel risk-card">
-            <div class="card-head">
-              <h4>Blended Discount Risk Engine</h4>
-              <span
-                class="badge"
-                [class.badge-success]="quote.riskSeverity === 'LOW'"
-                [class.badge-warning]="quote.riskSeverity === 'MEDIUM'"
-                [class.badge-danger]="quote.riskSeverity === 'HIGH' || quote.riskSeverity === 'CRITICAL'"
-              >
-                {{ quote.riskSeverity }} RISK
-              </span>
-            </div>
-
-            <div class="risk-bar-container">
-              <div class="risk-bar-bg">
-                <div
-                  class="risk-bar-fill"
-                  [style.width.%]="Math.min(100, quote.riskScore)"
-                  [style.background]="getRiskColor(quote.riskSeverity)"
-                ></div>
+            <!-- BLENDED RISK SCORE BREAKDOWN CARD -->
+            <div class="glass-panel risk-card">
+              <div class="card-head">
+                <h4>Blended Discount Risk Engine</h4>
+                <span
+                  class="badge"
+                  [class.badge-success]="currentRiskSeverity === 'LOW'"
+                  [class.badge-warning]="currentRiskSeverity === 'MEDIUM'"
+                  [class.badge-danger]="currentRiskSeverity === 'HIGH' || currentRiskSeverity === 'CRITICAL'"
+                >
+                  {{ currentRiskSeverity }} RISK
+                </span>
               </div>
-              <div class="risk-bar-meta">
-                <span>Calculated Risk Score: <strong>{{ quote.riskScore | number:'1.1-1' }}/100</strong></span>
-                <span>Threshold: 25.0</span>
-              </div>
-            </div>
 
-            <!-- Approval Hierarchy Matrix Notice -->
-            <div class="approval-notice" *ngIf="quote.requiresManagerApproval || quote.requiresFinanceApproval">
-              <div class="notice-icon">🛡️</div>
-              <div>
-                <strong>Governance Policy Triggered:</strong>
-                <p>
-                  {{ quote.requiresFinanceApproval ? 'Single line discount exceeds 15% ceiling or margin < 20%. Requires Sales Manager + VP & CFO sign-off.' : 'Blended discount exceeds 10%. Requires Sales Manager approval.' }}
-                </p>
+              <div class="risk-bar-container">
+                <div class="risk-bar-bg">
+                  <div
+                    class="risk-bar-fill"
+                    [style.width.%]="Math.min(100, currentRiskScore)"
+                    [style.background]="getRiskColor(currentRiskSeverity)"
+                  ></div>
+                </div>
+                <div class="risk-bar-meta">
+                  <span>Calculated Risk Score: <strong>{{ currentRiskScore | number:'1.1-1' }}/100</strong></span>
+                  <span>Threshold: 25.0</span>
+                </div>
               </div>
-            </div>
 
-            <div class="approval-notice success-notice" *ngIf="!quote.requiresManagerApproval && !quote.requiresFinanceApproval">
-              <div class="notice-icon">✓</div>
-              <div>
-                <strong>Auto-Approved (Level 0):</strong>
-                <p>All line discounts within category ceilings and margin exceeds target. Ready to convert or fulfill.</p>
+              <!-- Approval Hierarchy Matrix Notice -->
+              <div class="approval-notice" *ngIf="requiresManagerApproval || requiresFinanceApproval">
+                <div class="notice-icon">🛡️</div>
+                <div>
+                  <strong>Governance Policy Triggered:</strong>
+                  <p>
+                    {{ requiresFinanceApproval ? 'Single line discount exceeds 15% ceiling or margin < 20%. Requires Sales Manager + CFO sign-off.' : 'Blended discount exceeds 10%. Requires Sales Manager approval.' }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="approval-notice success-notice" *ngIf="!requiresManagerApproval && !requiresFinanceApproval">
+                <div class="notice-icon">✓</div>
+                <div>
+                  <strong>Auto-Approved (Level 0):</strong>
+                  <p>All line discounts within category ceilings and margin exceeds target. Ready to convert.</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- QUOTATION FINANCIAL SUMMARY CARD -->
-          <div class="glass-panel summary-card">
-            <h4>Quotation Financial Summary</h4>
-            <div class="summary-lines">
-              <div class="summary-line">
-                <span>Gross List Subtotal:</span>
-                <span class="mono">{{ formatCurrency(quote.subtotalAmount) }}</span>
-              </div>
-              <div class="summary-line text-warning">
-                <span>Total Discount ({{ quote.blendedDiscountPct | number:'1.1-1' }}%):</span>
-                <span class="mono">-{{ formatCurrency(quote.totalDiscountAmount) }}</span>
-              </div>
-              <div class="summary-line">
-                <span>Estimated Freight & Logistics:</span>
-                <span class="mono">+{{ formatCurrency(quote.shippingAmount || 1850) }}</span>
-              </div>
-              <div class="summary-line">
-                <span>Sales Tax (Est. 7.5%):</span>
-                <span class="mono">+{{ formatCurrency(quote.taxAmount || 0) }}</span>
-              </div>
-              <div class="summary-line total-line">
-                <span>Net Total Commitment:</span>
-                <span class="mono total-amount">{{ formatCurrency(quote.totalAmount) }}</span>
+            <!-- QUOTATION FINANCIAL SUMMARY CARD -->
+            <div class="glass-panel summary-card">
+              <h4>Quotation Financial Summary</h4>
+              <div class="summary-lines">
+                <div class="summary-line">
+                  <span>Gross List Subtotal:</span>
+                  <span class="mono">{{ formatCurrency(currentSubtotal) }}</span>
+                </div>
+                <div class="summary-line text-warning">
+                  <span>Total Discount ({{ currentDiscountPct | number:'1.1-1' }}%):</span>
+                  <span class="mono">-{{ formatCurrency(currentDiscountAmount) }}</span>
+                </div>
+                <div class="summary-line">
+                  <span>Estimated Tax:</span>
+                  <span class="mono">+{{ formatCurrency(currentTaxAmount) }}</span>
+                </div>
+                <div class="summary-line total-line">
+                  <span>Net Total Commitment:</span>
+                  <span class="mono total-amount">{{ formatCurrency(currentTotalAmount) }}</span>
+                </div>
+                <div class="summary-line text-muted font-xs">
+                  <span>Total Cost Basis:</span>
+                  <span class="mono">{{ formatCurrency(currentTotalCost) }}</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </ng-container>
     </div>
   `,
   styles: [`
@@ -439,6 +519,64 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
       flex-direction: column;
       gap: 18px;
     }
+
+    /* Alert Toast */
+    .alert-toast {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .alert-success {
+      background: rgba(0, 223, 162, 0.15);
+      border: 1px solid #00dfa2;
+      color: #00dfa2;
+    }
+    .alert-danger {
+      background: rgba(255, 0, 122, 0.15);
+      border: 1px solid #ff007a;
+      color: #ff007a;
+    }
+    .alert-info {
+      background: rgba(0, 242, 254, 0.15);
+      border: 1px solid #00f2fe;
+      color: #00f2fe;
+    }
+    .alert-close {
+      margin-left: auto;
+      background: transparent;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    /* Loading and Error States */
+    .loading-box, .error-box {
+      padding: 40px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(0, 242, 254, 0.2);
+      border-top-color: #00f2fe;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .error-icon { font-size: 36px; }
+
+    /* Top Navigation */
     .top-nav {
       padding: 12px 20px;
       display: flex;
@@ -498,6 +636,11 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
     .customer-panel {
       padding: 18px;
     }
+    .create-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
     .panel-row {
       display: flex;
       justify-content: space-between;
@@ -520,6 +663,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
     .client-meta h3 {
       font-size: 18px;
       color: #fff;
+      margin: 0;
     }
     .destination-tag {
       font-size: 12px;
@@ -606,6 +750,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
       color: var(--text-muted);
       font-style: italic;
     }
+
     /* Upsell Panel */
     .upsell-panel {
       padding: 18px;
@@ -650,6 +795,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
       font-weight: 700;
       color: #00dfa2;
     }
+
     /* Sidebar Cards */
     .sidebar-column {
       display: flex;
@@ -669,7 +815,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
       align-items: center;
       margin-bottom: 12px;
     }
-    .gauge-header h3 { font-size: 14px; }
+    .gauge-header h3 { font-size: 14px; margin: 0; }
     .gauge-wrapper {
       position: relative;
       display: flex;
@@ -713,7 +859,7 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
       align-items: center;
       margin-bottom: 12px;
     }
-    .card-head h4 { font-size: 13px; }
+    .card-head h4 { font-size: 13px; margin: 0; }
     .risk-bar-container {
       display: flex;
       flex-direction: column;
@@ -784,152 +930,329 @@ import { generate120Products, MOCK_PRODUCTS } from '../services/mock-data';
       font-size: 18px;
       color: #00f2fe;
     }
+    .font-xs { font-size: 11px; }
   `]
 })
-export class QuoteBuilderComponent implements OnInit {
+export class QuoteBuilderComponent implements OnInit, OnDestroy {
+  isCreateMode = false;
+  quoteId: number | null = null;
   quote?: Quotation;
+  lines: QuotationLine[] = [];
+
+  availableCustomers: Customer[] = [];
+  availablePriceLists: PriceList[] = [];
   availableProducts: Product[] = [];
+
+  selectedCustomerId: number | null = null;
+  selectedPriceListId: number | null = null;
   selectedProductId: number | null = null;
+  targetDeliveryDate: string = '';
+
   upsells: UpsellSuggestion[] = [];
+
+  isLoading = true;
+  isSaving = false;
+  isSubmitting = false;
+  isConfirming = false;
+  errorMessage: string | null = null;
+  alertMessage: string | null = null;
+  alertType: 'success' | 'error' | 'info' = 'info';
+
+  currentRole = 'ADMIN';
+  currentUserName = 'Administrator';
   now = new Date().toISOString();
   Math = Math;
+
+  private subs = new Subscription();
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private quoteService: QuotationService,
-    private catalogService: CatalogService
+    private catalogService: CatalogService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
-    const idParam = this.route.snapshot.paramMap.get('id');
-    if (!idParam || idParam === 'new') {
-      this.quote = this.createNewOrFallbackQuote(1);
-    } else {
-      const quoteId = parseInt(idParam, 10);
-      this.loadQuote(isNaN(quoteId) ? 1 : quoteId);
-    }
-    this.loadProducts();
+    // Set default target delivery date to today + 14 days
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    this.targetDeliveryDate = d.toISOString().split('T')[0];
+
+    this.subs.add(
+      this.authService.currentRole$.subscribe(r => this.currentRole = r)
+    );
+    this.subs.add(
+      this.authService.currentUser$.subscribe(u => this.currentUserName = u.name)
+    );
+
+    this.loadCatalogMasterData();
+
+    this.subs.add(
+      this.route.paramMap.subscribe(params => {
+        const idParam = params.get('id');
+        if (!idParam || idParam === 'new') {
+          this.isCreateMode = true;
+          this.quoteId = null;
+          this.quote = undefined;
+          this.lines = [];
+          this.isLoading = false;
+        } else {
+          this.isCreateMode = false;
+          const parsed = parseInt(idParam, 10);
+          if (isNaN(parsed)) {
+            this.errorMessage = `Invalid quotation ID: ${idParam}`;
+            this.isLoading = false;
+          } else {
+            this.quoteId = parsed;
+            this.loadQuote(parsed);
+          }
+        }
+      })
+    );
   }
 
-  loadQuote(id: number): void {
-    this.quoteService.getQuotationById(id).subscribe({
-      next: (q) => {
-        if (q && q.lines && q.lines.length > 0) {
-          this.quote = q;
-        } else {
-          this.quote = this.createNewOrFallbackQuote(id);
-        }
-        if (this.quote) {
-          this.loadUpsells(this.quote.id);
+  ngOnDestroy(): void {
+    this.subs.unsubscribe();
+  }
+
+  loadCatalogMasterData(): void {
+    this.catalogService.getCustomers().subscribe({
+      next: (custs) => {
+        this.availableCustomers = custs || [];
+        if (this.isCreateMode && this.availableCustomers.length > 0 && !this.selectedCustomerId) {
+          this.selectedCustomerId = this.availableCustomers[0].id;
+          this.onCustomerSelected();
         }
       },
-      error: () => {
-        this.quote = this.createNewOrFallbackQuote(id);
-      }
+      error: (err) => console.error('Error fetching customers', err)
+    });
+
+    this.catalogService.getPriceLists().subscribe({
+      next: (pls) => {
+        this.availablePriceLists = pls || [];
+        if (this.availablePriceLists.length > 0 && !this.selectedPriceListId) {
+          this.selectedPriceListId = this.availablePriceLists[0].id;
+        }
+      },
+      error: (err) => console.error('Error fetching price lists', err)
+    });
+
+    this.catalogService.getProducts().subscribe({
+      next: (prods) => {
+        this.availableProducts = prods || [];
+      },
+      error: (err) => console.error('Error fetching products', err)
     });
   }
 
-  loadProducts(): void {
-    this.catalogService.getProducts().subscribe({
-      next: (prods) => {
-        if (prods && prods.length > 0) {
-          this.availableProducts = prods;
-        } else {
-          this.availableProducts = generate120Products();
+  loadQuote(id: number): void {
+    this.isLoading = true;
+    this.errorMessage = null;
+
+    this.quoteService.getQuotationById(id).subscribe({
+      next: (q) => {
+        this.isLoading = false;
+        if (!q) {
+          this.errorMessage = `Quotation #${id} was not found.`;
+          return;
         }
+        this.quote = q;
+        this.lines = (q.lines || []).map(l => ({
+          ...l,
+          unitListPrice: l.unitListPrice || l.product?.basePrice || 0,
+          unitDiscountPct: l.unitDiscountPct ?? l.discountPercent ?? 0,
+          unitFinalPrice: l.unitFinalPrice || (l.unitListPrice ? l.unitListPrice * (1 - ((l.unitDiscountPct || 0)/100)) : 0),
+          lineTotal: l.lineTotal || 0,
+          lineCost: l.lineCost || (l.product?.costPrice ? l.product.costPrice * l.quantity : 0),
+          lineMarginPct: l.lineMarginPct ?? (l.lineTotal && l.lineCost ? ((l.lineTotal - l.lineCost) / l.lineTotal * 100) : 0)
+        }));
+        this.loadUpsells(id);
       },
-      error: () => {
-        this.availableProducts = generate120Products();
+      error: (err) => {
+        this.isLoading = false;
+        if (err.status === 403) {
+          this.errorMessage = 'Access Denied: You do not have permission to view this quotation.';
+        } else if (err.status === 404) {
+          this.errorMessage = `Quotation #${id} not found in system database.`;
+        } else {
+          this.errorMessage = `Failed to load quotation #${id} from backend: ${err.message || 'Server error'}`;
+        }
       }
     });
   }
 
   loadUpsells(quoteId: number): void {
     this.quoteService.getUpsellSuggestions(quoteId).subscribe({
-      next: (res) => this.upsells = res,
-      error: () => {
-        this.upsells = [
-          {
-            ruleId: 1,
-            ruleName: 'Enterprise SLA Gold Bundle',
-            recommendedProduct: MOCK_PRODUCTS[6],
-            discountOverridePct: 10,
-            revenueImpact: 16200,
-            marginImpactPct: 4.8,
-            explanation: 'Bundling Mission Critical Support with Ground Gateways increases contract value while elevating blended gross margin to 42%+.'
-          },
-          {
-            ruleId: 2,
-            ruleName: 'Autonomous AI Governor Upgrade',
-            recommendedProduct: MOCK_PRODUCTS[5],
-            discountOverridePct: 5,
-            revenueImpact: 28800,
-            marginImpactPct: 6.2,
-            explanation: 'Attaching AI CPQ Governance to core server blades provides autonomous quote reconciliation with 75% gross profit margin.'
-          }
-        ];
-      }
+      next: (res) => this.upsells = res || [],
+      error: () => this.upsells = []
     });
   }
 
+  onCustomerSelected(): void {
+    if (!this.selectedCustomerId) return;
+    const cust = this.availableCustomers.find(c => c.id === this.selectedCustomerId);
+    if (!cust) return;
+
+    // Match Price List to Customer Tier if available
+    const tierName = this.getCustomerTierString(cust);
+    const matchedPl = this.availablePriceLists.find(pl => pl.customerTier === tierName);
+    if (matchedPl) {
+      this.selectedPriceListId = matchedPl.id;
+    }
+  }
+
+  get isEditable(): boolean {
+    if (this.isCreateMode) return true;
+    if (!this.quote) return false;
+    const editableStatuses = ['DRAFT', 'UNDER_NEGOTIATION', 'RETURNED'];
+    return editableStatuses.includes(this.quote.status) && this.currentRole !== 'CUSTOMER';
+  }
+
   get capexLines(): QuotationLine[] {
-    if (!this.quote) return [];
-    return this.quote.lines.filter(l => l.product.type !== 'SUBSCRIPTION' && l.product.type !== 'SOFTWARE_SUBSCRIPTION');
+    return this.lines.filter(l => {
+      const isSub = l.product?.isSubscription || l.product?.type === 'SUBSCRIPTION' || l.product?.type === 'SOFTWARE_SUBSCRIPTION';
+      return !isSub;
+    });
   }
 
   get opexLines(): QuotationLine[] {
-    if (!this.quote) return [];
-    return this.quote.lines.filter(l => l.product.type === 'SUBSCRIPTION' || l.product.type === 'SOFTWARE_SUBSCRIPTION');
+    return this.lines.filter(l => {
+      const isSub = l.product?.isSubscription || l.product?.type === 'SUBSCRIPTION' || l.product?.type === 'SOFTWARE_SUBSCRIPTION';
+      return isSub;
+    });
   }
 
   get capexSubtotal(): number {
-    return this.capexLines.reduce((sum, l) => sum + l.lineTotal, 0);
+    return this.capexLines.reduce((sum, l) => sum + (l.lineTotal || 0), 0);
   }
 
   get opexSubtotal(): number {
-    return this.opexLines.reduce((sum, l) => sum + l.lineTotal, 0);
+    return this.opexLines.reduce((sum, l) => sum + (l.lineTotal || 0), 0);
+  }
+
+  get currentSubtotal(): number {
+    if (this.lines.length === 0) return 0;
+    return this.lines.reduce((sum, l) => sum + (this.getLineListPrice(l) * l.quantity), 0);
+  }
+
+  get currentDiscountAmount(): number {
+    if (this.lines.length === 0) return 0;
+    return this.lines.reduce((sum, l) => {
+      const list = this.getLineListPrice(l);
+      const disc = Math.min(100, Math.max(0, l.unitDiscountPct || 0));
+      return sum + (list * (disc / 100) * l.quantity);
+    }, 0);
+  }
+
+  get currentDiscountPct(): number {
+    const sub = this.currentSubtotal;
+    return sub > 0 ? (this.currentDiscountAmount / sub) * 100 : 0;
+  }
+
+  get currentTaxAmount(): number {
+    if (this.lines.length === 0) return 0;
+    return this.lines.reduce((sum, l) => {
+      const taxRate = (l.product?.taxPercentage || 0) / 100;
+      return sum + (l.lineTotal * taxRate);
+    }, 0);
+  }
+
+  get currentTotalAmount(): number {
+    const afterDiscount = this.currentSubtotal - this.currentDiscountAmount;
+    return afterDiscount + this.currentTaxAmount;
+  }
+
+  get currentTotalCost(): number {
+    return this.lines.reduce((sum, l) => {
+      const cost = l.product?.costPrice ?? l.product?.unitCost ?? 0;
+      return sum + (cost * l.quantity);
+    }, 0);
+  }
+
+  get currentMargin(): number {
+    const revenue = this.currentSubtotal - this.currentDiscountAmount;
+    const cost = this.currentTotalCost;
+    if (revenue <= 0) return 0;
+    return Math.max(0, ((revenue - cost) / revenue) * 100);
+  }
+
+  get currentRiskScore(): number {
+    if (this.quote?.blendedRiskScore != null) return this.quote.blendedRiskScore;
+    if (this.quote?.riskScore != null) return this.quote.riskScore;
+
+    const disc = this.currentDiscountPct;
+    const margin = this.currentMargin;
+    const hasSpike = this.lines.some(l => this.isOverage(l));
+
+    if (margin < 18 || disc > 20) return 85.0;
+    if (hasSpike || disc > 12) return 58.0;
+    return Number((disc * 1.5).toFixed(1));
+  }
+
+  get currentRiskSeverity(): string {
+    const score = this.currentRiskScore;
+    if (score >= 60) return 'CRITICAL';
+    if (score >= 35) return 'HIGH';
+    if (score >= 15) return 'MEDIUM';
+    return 'LOW';
+  }
+
+  get requiresManagerApproval(): boolean {
+    return this.currentRiskScore >= 25 || this.currentDiscountPct > 10 || this.lines.some(l => this.isOverage(l));
+  }
+
+  get requiresFinanceApproval(): boolean {
+    return this.currentRiskScore >= 60 || this.currentMargin < 20 || this.currentDiscountPct > 18;
+  }
+
+  getLineListPrice(line: QuotationLine): number {
+    return line.unitListPrice || line.product?.basePrice || 0;
   }
 
   addLineItem(): void {
-    if (!this.selectedProductId || !this.quote) return;
+    if (!this.selectedProductId) return;
     const prod = this.availableProducts.find(p => p.id === this.selectedProductId);
     if (!prod) return;
+
+    const listPrice = prod.basePrice || 0;
+    const costPrice = prod.costPrice ?? prod.unitCost ?? 0;
+    const initialMargin = listPrice > 0 ? ((listPrice - costPrice) / listPrice) * 100 : 0;
 
     const newLine: QuotationLine = {
       product: prod,
       quantity: 1,
-      unitListPrice: prod.basePrice,
+      unitListPrice: listPrice,
       unitDiscountPct: 0,
       unitDiscountAmount: 0,
-      unitFinalPrice: prod.basePrice,
-      lineTotal: prod.basePrice,
-      lineCost: prod.unitCost,
-      lineMarginPct: Number((((prod.basePrice - prod.unitCost) / prod.basePrice) * 100).toFixed(1))
+      unitFinalPrice: listPrice,
+      lineTotal: listPrice,
+      lineCost: costPrice,
+      lineMarginPct: Number(initialMargin.toFixed(1))
     };
 
-    this.quote.lines.push(newLine);
+    this.lines.push(newLine);
     this.selectedProductId = null;
     this.recalculateTotals();
   }
 
   removeLine(line: QuotationLine): void {
-    if (!this.quote) return;
-    const idx = this.quote.lines.indexOf(line);
+    const idx = this.lines.indexOf(line);
     if (idx >= 0) {
-      this.quote.lines.splice(idx, 1);
+      this.lines.splice(idx, 1);
       this.recalculateTotals();
     }
   }
 
   recomputeLine(line: QuotationLine): void {
-    const list = line.unitListPrice;
-    const discPct = Math.min(100, Math.max(0, line.unitDiscountPct));
+    const list = this.getLineListPrice(line);
+    const discPct = Math.min(100, Math.max(0, line.unitDiscountPct || 0));
     line.unitDiscountPct = discPct;
     line.unitDiscountAmount = list * (discPct / 100);
     line.unitFinalPrice = list - line.unitDiscountAmount;
     line.lineTotal = line.unitFinalPrice * line.quantity;
-    line.lineCost = line.product.unitCost * line.quantity;
+    const cost = line.product?.costPrice ?? line.product?.unitCost ?? 0;
+    line.lineCost = cost * line.quantity;
     line.lineMarginPct = line.lineTotal > 0
       ? Number((((line.lineTotal - line.lineCost) / line.lineTotal) * 100).toFixed(1))
       : 0;
@@ -938,109 +1261,221 @@ export class QuoteBuilderComponent implements OnInit {
   }
 
   recalculateTotals(): void {
-    if (!this.quote) return;
-    let subtotal = 0;
-    let totalDiscount = 0;
-    let totalCost = 0;
-
-    for (const l of this.quote.lines) {
-      subtotal += l.unitListPrice * l.quantity;
-      totalDiscount += l.unitDiscountAmount * l.quantity;
-      totalCost += l.lineCost;
-    }
-
-    this.quote.subtotalAmount = subtotal;
-    this.quote.totalDiscountAmount = totalDiscount;
-    this.quote.blendedDiscountPct = subtotal > 0 ? Number(((totalDiscount / subtotal) * 100).toFixed(1)) : 0;
-    this.quote.totalCostAmount = totalCost;
-
-    const finalAfterDisc = subtotal - totalDiscount;
-    this.quote.totalAmount = finalAfterDisc + (this.quote.shippingAmount || 1850) + (this.quote.taxAmount || 0);
-    this.quote.marginPct = finalAfterDisc > 0
-      ? Number((((finalAfterDisc - totalCost) / finalAfterDisc) * 100).toFixed(1))
-      : 0;
-
-    // Evaluate Risk Score locally & reactively
-    const hasSingleLineSpike = this.quote.lines.some(l => l.unitDiscountPct > (l.product.category?.maxDiscountCeilingPct || 15));
-    const blendedSpike = this.quote.blendedDiscountPct > 12;
-
-    if (this.quote.marginPct < 18 || this.quote.blendedDiscountPct > 20) {
-      this.quote.riskScore = 85.0;
-      this.quote.riskSeverity = 'CRITICAL';
-      this.quote.requiresManagerApproval = true;
-      this.quote.requiresFinanceApproval = true;
-    } else if (hasSingleLineSpike || blendedSpike) {
-      this.quote.riskScore = 58.0;
-      this.quote.riskSeverity = 'HIGH';
-      this.quote.requiresManagerApproval = true;
-      this.quote.requiresFinanceApproval = false;
-    } else {
-      this.quote.riskScore = Number((this.quote.blendedDiscountPct * 1.5).toFixed(1));
-      this.quote.riskSeverity = this.quote.riskScore > 25 ? 'MEDIUM' : 'LOW';
-      this.quote.requiresManagerApproval = false;
-      this.quote.requiresFinanceApproval = false;
+    if (this.quote) {
+      this.quote.subtotalAmount = this.currentSubtotal;
+      this.quote.totalDiscountAmount = this.currentDiscountAmount;
+      this.quote.blendedDiscountPct = this.currentDiscountPct;
+      this.quote.totalAmount = this.currentTotalAmount;
+      this.quote.totalCost = this.currentTotalCost;
+      this.quote.marginPercentage = this.currentMargin;
+      this.quote.blendedRiskScore = this.currentRiskScore;
+      this.quote.riskSeverity = this.currentRiskSeverity;
     }
   }
 
-  applyPreset(type: 'safe' | 'aggressive' | 'critical'): void {
+  saveDraft(): void {
+    if (this.isCreateMode) {
+      if (!this.selectedCustomerId) {
+        this.showAlert('Please select an enterprise customer to create quotation.', 'error');
+        return;
+      }
+      if (this.lines.length === 0) {
+        this.showAlert('Please add at least one line item to save draft quotation.', 'error');
+        return;
+      }
+
+      this.isSaving = true;
+      const payload = {
+        customerId: this.selectedCustomerId,
+        promisedDeliveryDate: this.targetDeliveryDate,
+        lines: this.lines.map(l => ({
+          productId: l.product.id,
+          quantity: l.quantity,
+          discountPercent: l.unitDiscountPct || 0
+        }))
+      };
+
+      this.quoteService.createQuotation(payload).subscribe({
+        next: (created) => {
+          this.isSaving = false;
+          this.showAlert(`Quotation ${created.quoteNumber} created successfully in database!`, 'success');
+          // Navigate to the saved quotation detail/edit route
+          this.router.navigate(['/dashboard/quote', created.id]);
+        },
+        error: (err) => {
+          this.isSaving = false;
+          this.showAlert(`Failed to create quotation: ${err.error?.message || err.message || 'Server error'}`, 'error');
+        }
+      });
+    } else {
+      if (!this.quote) return;
+      if (this.lines.length === 0) {
+        this.showAlert('Quotation must contain at least one line item.', 'error');
+        return;
+      }
+
+      this.isSaving = true;
+      const lineRequests: LineItemRequest[] = this.lines.map(l => ({
+        id: l.id,
+        productId: l.product.id,
+        quantity: l.quantity,
+        discountPercent: l.unitDiscountPct || 0
+      }));
+
+      this.quoteService.updateQuotationLines(this.quote.id, lineRequests).subscribe({
+        next: (updated) => {
+          this.isSaving = false;
+          this.quote = updated;
+          this.lines = (updated.lines || []).map(l => ({
+            ...l,
+            unitListPrice: l.unitListPrice || l.product?.basePrice || 0,
+            unitDiscountPct: l.unitDiscountPct ?? l.discountPercent ?? 0,
+            unitFinalPrice: l.unitFinalPrice || (l.unitListPrice ? l.unitListPrice * (1 - ((l.unitDiscountPct || 0)/100)) : 0),
+            lineTotal: l.lineTotal || 0,
+            lineCost: l.lineCost || (l.product?.costPrice ? l.product.costPrice * l.quantity : 0),
+            lineMarginPct: l.lineMarginPct ?? 0
+          }));
+          this.showAlert(`Quotation ${updated.quoteNumber} updated with authoritative backend recalculation!`, 'success');
+        },
+        error: (err) => {
+          this.isSaving = false;
+          this.showAlert(`Failed to save changes: ${err.error?.message || err.message || 'Server error'}`, 'error');
+        }
+      });
+    }
+  }
+
+  submitForApproval(): void {
     if (!this.quote) return;
+    this.isSubmitting = true;
+
+    // Save line changes first if any, then submit
+    const lineRequests: LineItemRequest[] = this.lines.map(l => ({
+      id: l.id,
+      productId: l.product.id,
+      quantity: l.quantity,
+      discountPercent: l.unitDiscountPct || 0
+    }));
+
+    this.quoteService.updateQuotationLines(this.quote.id, lineRequests).subscribe({
+      next: () => {
+        this.quoteService.submitForApproval(this.quote!.id).subscribe({
+          next: (res) => {
+            this.isSubmitting = false;
+            const newStatus = res?.status || 'PENDING_APPROVAL';
+            this.showAlert(res?.message || `Quotation successfully submitted! Status is now ${newStatus}.`, 'success');
+            if (this.quoteId) {
+              this.loadQuote(this.quoteId);
+            }
+          },
+          error: (err) => {
+            this.isSubmitting = false;
+            this.showAlert(`Failed to submit for approval: ${err.error?.message || err.message || 'Server error'}`, 'error');
+          }
+        });
+      },
+      error: (err) => {
+        this.isSubmitting = false;
+        this.showAlert(`Failed to save lines before submission: ${err.message}`, 'error');
+      }
+    });
+  }
+
+  confirmOrder(): void {
+    if (!this.quote) return;
+    this.isConfirming = true;
+
+    this.quoteService.confirmQuotation(this.quote.id).subscribe({
+      next: (confirmed) => {
+        this.isConfirming = false;
+        this.quote = confirmed;
+        this.showAlert(`Quotation ${confirmed.quoteNumber} confirmed and converted to active Sales Order!`, 'success');
+      },
+      error: (err) => {
+        this.isConfirming = false;
+        this.showAlert(`Failed to convert to Sales Order: ${err.error?.message || err.message || 'Server error'}`, 'error');
+      }
+    });
+  }
+
+  applyPreset(type: 'safe' | 'aggressive' | 'critical'): void {
+    if (this.lines.length === 0) {
+      if (this.availableProducts.length > 0) {
+        // Add 2 products if lines empty
+        this.selectedProductId = this.availableProducts[0].id;
+        this.addLineItem();
+        if (this.availableProducts.length > 1) {
+          this.selectedProductId = this.availableProducts[1].id;
+          this.addLineItem();
+        }
+      }
+    }
+
     if (type === 'safe') {
-      this.quote.lines.forEach((l, idx) => {
+      this.lines.forEach((l, idx) => {
         l.unitDiscountPct = idx === 0 ? 5 : 0;
         this.recomputeLine(l);
       });
+      this.showAlert('Applied Safe Deal Preset (>35% Gross Margin).', 'info');
     } else if (type === 'aggressive') {
-      this.quote.lines.forEach((l, idx) => {
+      this.lines.forEach((l, idx) => {
         l.unitDiscountPct = idx === 0 ? 18 : 8;
         this.recomputeLine(l);
       });
+      this.showAlert('Applied Manager Escalation Preset (Single line exceeds 15% discount cap).', 'info');
     } else {
-      this.quote.lines.forEach((l, idx) => {
+      this.lines.forEach((l, idx) => {
         l.unitDiscountPct = idx === 0 ? 28 : 22;
         this.recomputeLine(l);
       });
+      this.showAlert('Applied CFO Emergency Desk Preset (Severe discount erosion).', 'error');
     }
   }
 
   acceptUpsell(u: UpsellSuggestion): void {
-    if (!this.quote) return;
     const prod = u.recommendedProduct || u.suggestedProduct;
     if (!prod) return;
 
-    this.quote.lines.push({
+    const listPrice = prod.basePrice || 0;
+    const costPrice = prod.costPrice ?? prod.unitCost ?? 0;
+    const disc = u.discountOverridePct || 5;
+    const net = listPrice * (1 - (disc / 100));
+
+    this.lines.push({
       product: prod,
       quantity: 1,
-      unitListPrice: prod.basePrice,
-      unitDiscountPct: u.discountOverridePct || 5,
-      unitDiscountAmount: prod.basePrice * ((u.discountOverridePct || 5) / 100),
-      unitFinalPrice: prod.basePrice * (1 - ((u.discountOverridePct || 5) / 100)),
-      lineTotal: prod.basePrice * (1 - ((u.discountOverridePct || 5) / 100)),
-      lineCost: prod.unitCost,
-      lineMarginPct: 55.0
+      unitListPrice: listPrice,
+      unitDiscountPct: disc,
+      unitDiscountAmount: listPrice * (disc / 100),
+      unitFinalPrice: net,
+      lineTotal: net,
+      lineCost: costPrice,
+      lineMarginPct: net > 0 ? Number((((net - costPrice) / net) * 100).toFixed(1)) : 50.0
     });
 
     const idx = this.upsells.indexOf(u);
     if (idx >= 0) this.upsells.splice(idx, 1);
     this.recalculateTotals();
+    this.showAlert(`Added ${prod.name} with ${disc}% promotional bundle discount!`, 'success');
   }
 
   isOverage(line: QuotationLine): boolean {
-    const ceiling = line.product.category?.maxDiscountCeilingPct || 15;
-    return line.unitDiscountPct > ceiling;
+    const ceiling = line.product?.category?.maxDiscountCeilingPct || line.product?.category?.maxDiscountPercent || 15;
+    return (line.unitDiscountPct || 0) > ceiling;
   }
 
-  submitForApproval(): void {
-    if (!this.quote) return;
-    this.quote.status = 'PENDING_APPROVAL';
-    alert('Quotation submitted for approval! Auto-routed to Sales Manager & Finance approval hierarchy.');
-    this.router.navigate(['/approval', this.quote.id]);
+  getCustomerTierString(cust: Customer): string {
+    if (!cust) return 'BRONZE';
+    if (typeof cust.tier === 'string') return cust.tier;
+    if (cust.tier && typeof cust.tier === 'object') return (cust.tier as any).tierName || 'BRONZE';
+    return 'BRONZE';
   }
 
-  confirmOrder(): void {
-    if (!this.quote) return;
-    this.quote.status = 'CONFIRMED';
-    alert('Order confirmed and converted to active Sales Order!');
-    this.router.navigate(['/fulfillment', this.quote.id]);
+  getCustomerTierName(q: Quotation): string {
+    if (q.customer) {
+      return this.getCustomerTierString(q.customer);
+    }
+    return 'Standard';
   }
 
   calculateDashOffset(marginPct: number): number {
@@ -1069,71 +1504,16 @@ export class QuoteBuilderComponent implements OnInit {
   }
 
   formatCurrency(val: number): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0);
   }
 
-  createNewOrFallbackQuote(id?: number): Quotation {
-    return {
-      id: id || 2,
-      quoteNumber: 'Q-2026-1043',
-      customer: {
-        id: 2,
-        name: 'SpaceX Starlink Operations',
-        code: 'SPX-09',
-        email: 'logistics@spacex.com',
-        contactEmail: 'logistics@spacex.com',
-        destinationRegion: 'North America West',
-        tier: { id: 1, tierName: 'Enterprise Diamond', code: 'DIAMOND', defaultDiscountPct: 5, maxAllowedDiscountPct: 20 }
-      },
-      salesRep: { id: 2, name: 'Jay Rao', email: 'j.rao@dealflow360.com', role: 'SALES_REP' },
-      status: 'PENDING_APPROVAL',
-      subtotalAmount: 480000,
-      totalDiscountAmount: 86400,
-      totalAmount: 393600,
-      totalCostAmount: 320800,
-      blendedDiscountPct: 18.0,
-      marginPct: 18.5,
-      riskScore: 78.5,
-      riskSeverity: 'HIGH',
-      requiresManagerApproval: true,
-      requiresFinanceApproval: true,
-      shippingAmount: 2500,
-      taxAmount: 0,
-      lines: [
-        {
-          product: MOCK_PRODUCTS[0],
-          quantity: 20,
-          unitListPrice: 12500,
-          unitDiscountPct: 18,
-          unitDiscountAmount: 2250,
-          unitFinalPrice: 10250,
-          lineTotal: 205000,
-          lineCost: 162000,
-          lineMarginPct: 21.0
-        },
-        {
-          product: MOCK_PRODUCTS[6],
-          quantity: 20,
-          unitListPrice: 1800,
-          unitDiscountPct: 5,
-          unitDiscountAmount: 90,
-          unitFinalPrice: 1710,
-          lineTotal: 34200,
-          lineCost: 11000,
-          lineMarginPct: 67.8
-        },
-        {
-          product: MOCK_PRODUCTS[10],
-          quantity: 60,
-          unitListPrice: 320,
-          unitDiscountPct: 0,
-          unitDiscountAmount: 0,
-          unitFinalPrice: 320,
-          lineTotal: 19200,
-          lineCost: 9600,
-          lineMarginPct: 50.0
-        }
-      ]
-    };
+  showAlert(msg: string, type: 'success' | 'error' | 'info' = 'info'): void {
+    this.alertMessage = msg;
+    this.alertType = type;
+    setTimeout(() => {
+      if (this.alertMessage === msg) {
+        this.alertMessage = null;
+      }
+    }, 6000);
   }
 }

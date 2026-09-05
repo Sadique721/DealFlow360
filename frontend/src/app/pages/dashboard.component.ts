@@ -9,7 +9,6 @@ export interface NavItem {
   label: string;
   path: string;
   icon: string;
-  section: 'MAIN' | 'SALES' | 'FINANCE' | 'INTELLIGENCE' | 'ADMIN';
   roles: UserRole[];
   badge?: string;
 }
@@ -29,32 +28,25 @@ export interface NavItem {
           <div class="brand-icon">D</div>
           <div class="brand-info" *ngIf="!sidebarCollapsed">
             <span class="brand-name">DealFlow<strong>360</strong></span>
-            <span class="role-pill" [style.background]="roleColor(currentRole) + '18'" [style.color]="roleColor(currentRole)">
+            <span class="role-pill" [style.background]="roleColor(currentRole) + '22'" [style.color]="roleColor(currentRole)">
               {{ roleDisplayName(currentRole) }}
             </span>
           </div>
         </div>
 
-        <!-- Navigation Groups -->
+        <!-- Navigation Links -->
         <nav class="sidebar-nav">
-          <ng-container *ngFor="let section of visibleSections; trackBy: trackSection">
-            <div class="nav-section-header" *ngIf="!sidebarCollapsed && section.title">
-              {{ section.title }}
-            </div>
-            <div class="nav-section-divider" *ngIf="sidebarCollapsed && section.title"></div>
-
-            <a
-              *ngFor="let item of section.items; trackBy: trackItem"
-              class="nav-link"
-              [routerLink]="item.path"
-              routerLinkActive="active"
-              [title]="sidebarCollapsed ? item.label : ''"
-            >
-              <span class="nav-icon" [innerHTML]="item.icon"></span>
-              <span class="nav-label" *ngIf="!sidebarCollapsed">{{ item.label }}</span>
-              <span class="nav-badge" *ngIf="!sidebarCollapsed && item.badge">{{ item.badge }}</span>
-            </a>
-          </ng-container>
+          <a
+            *ngFor="let item of visibleNavItems; trackBy: trackItem"
+            class="nav-link"
+            [routerLink]="item.path"
+            routerLinkActive="active"
+            [title]="sidebarCollapsed ? item.label : ''"
+          >
+            <span class="nav-icon" [innerHTML]="item.icon"></span>
+            <span class="nav-label" *ngIf="!sidebarCollapsed">{{ item.label }}</span>
+            <span class="nav-badge" *ngIf="!sidebarCollapsed && item.badge">{{ item.badge }}</span>
+          </a>
         </nav>
 
         <!-- Sidebar Footer / Collapse Toggle -->
@@ -126,25 +118,22 @@ export interface NavItem {
           <div class="brand-icon">D</div>
           <div class="brand-info">
             <span class="brand-name">DealFlow<strong>360</strong></span>
-            <span class="role-pill" [style.background]="roleColor(currentRole) + '18'" [style.color]="roleColor(currentRole)">
+            <span class="role-pill" [style.background]="roleColor(currentRole) + '22'" [style.color]="roleColor(currentRole)">
               {{ roleDisplayName(currentRole) }}
             </span>
           </div>
         </div>
         <nav class="sidebar-nav">
-          <ng-container *ngFor="let section of visibleSections; trackBy: trackSection">
-            <div class="nav-section-header" *ngIf="section.title">{{ section.title }}</div>
-            <a
-              *ngFor="let item of section.items; trackBy: trackItem"
-              class="nav-link"
-              [routerLink]="item.path"
-              routerLinkActive="active"
-              (click)="mobileSidebarOpen = false"
-            >
-              <span class="nav-icon" [innerHTML]="item.icon"></span>
-              <span class="nav-label">{{ item.label }}</span>
-            </a>
-          </ng-container>
+          <a
+            *ngFor="let item of visibleNavItems; trackBy: trackItem"
+            class="nav-link"
+            [routerLink]="item.path"
+            routerLinkActive="active"
+            (click)="mobileSidebarOpen = false"
+          >
+            <span class="nav-icon" [innerHTML]="item.icon"></span>
+            <span class="nav-label">{{ item.label }}</span>
+          </a>
         </nav>
       </aside>
     </div>
@@ -160,44 +149,45 @@ export interface NavItem {
 
     /* === SIDEBAR === */
     .sidebar {
-      width: 240px;
-      min-width: 240px;
-      background: #ffffff;
-      border-right: 1px solid var(--border-light, #e2e8f0);
+      width: 250px;
+      min-width: 250px;
+      background: #0f172a;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       flex-direction: column;
-      transition: width 0.2s ease, min-width 0.2s ease;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       overflow: hidden;
       z-index: 20;
     }
 
     .sidebar.collapsed {
-      width: 64px;
-      min-width: 64px;
+      width: 68px;
+      min-width: 68px;
     }
 
     /* Brand Header */
     .sidebar-brand {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 16px;
-      border-bottom: 1px solid var(--border-light, #e2e8f0);
-      min-height: 60px;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      min-height: 64px;
     }
 
     .brand-icon {
-      width: 32px;
-      height: 32px;
-      min-width: 32px;
-      background: var(--color-primary, #2563eb);
+      width: 34px;
+      height: 34px;
+      min-width: 34px;
+      background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
       color: #fff;
-      border-radius: 8px;
+      border-radius: 9px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      font-size: 15px;
+      font-size: 16px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
     }
 
     .brand-info {
@@ -210,12 +200,13 @@ export interface NavItem {
     .brand-name {
       font-size: 15px;
       font-weight: 600;
-      color: var(--text-primary, #0f172a);
+      color: #f8fafc;
       white-space: nowrap;
+      letter-spacing: -0.01em;
     }
 
     .brand-name strong {
-      color: var(--color-primary, #2563eb);
+      color: #60a5fa;
       font-weight: 800;
     }
 
@@ -224,64 +215,61 @@ export interface NavItem {
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 1px 6px;
+      letter-spacing: 0.06em;
+      padding: 2px 7px;
       border-radius: 4px;
       width: fit-content;
       white-space: nowrap;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    /* Nav items & Section headers */
+    /* Nav items */
     .sidebar-nav {
       flex: 1;
-      padding: 12px 8px;
+      padding: 12px 10px;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
       overflow-y: auto;
       overflow-x: hidden;
     }
 
-    .nav-section-header {
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--text-muted, #94a3b8);
-      padding: 10px 10px 4px;
-      white-space: nowrap;
+    .sidebar-nav::-webkit-scrollbar {
+      width: 4px;
     }
-
-    .nav-section-divider {
-      height: 1px;
-      background: var(--border-light, #e2e8f0);
-      margin: 6px 4px;
+    .sidebar-nav::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 4px;
     }
 
     .nav-link {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 9px 10px;
+      gap: 12px;
+      padding: 9.5px 12px;
       border-radius: 8px;
-      color: var(--text-secondary, #475569);
+      color: #94a3b8;
       text-decoration: none;
       font-size: 13.5px;
       font-weight: 500;
-      transition: all 0.15s ease;
+      transition: all 0.18s ease;
       white-space: nowrap;
       overflow: hidden;
+      border: 1px solid transparent;
     }
 
     .nav-link:hover {
-      background: var(--bg-hover, #f1f5f9);
-      color: var(--text-primary, #0f172a);
+      background: rgba(255, 255, 255, 0.06);
+      color: #f1f5f9;
+      transform: translateX(2px);
     }
 
     .nav-link.active {
-      background: var(--bg-active, #eff6ff);
-      color: var(--color-primary, #2563eb);
+      background: linear-gradient(90deg, rgba(37, 99, 235, 0.24) 0%, rgba(37, 99, 235, 0.08) 100%);
+      color: #93c5fd;
       font-weight: 600;
+      border-color: rgba(96, 165, 250, 0.25);
+      border-left: 3px solid #3b82f6;
     }
 
     .nav-icon {
@@ -291,6 +279,12 @@ export interface NavItem {
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      opacity: 0.85;
+    }
+
+    .nav-link.active .nav-icon {
+      opacity: 1;
+      color: #60a5fa;
     }
 
     .nav-label {
@@ -302,33 +296,34 @@ export interface NavItem {
     .nav-badge {
       font-size: 10px;
       font-weight: 700;
-      background: #eff6ff;
-      color: #2563eb;
-      border: 1px solid #bfdbfe;
+      background: rgba(37, 99, 235, 0.25);
+      color: #93c5fd;
+      border: 1px solid rgba(96, 165, 250, 0.3);
       padding: 1px 6px;
       border-radius: 9999px;
     }
 
     /* Sidebar Footer / Collapse */
     .sidebar-footer {
-      padding: 8px;
-      border-top: 1px solid var(--border-light, #e2e8f0);
+      padding: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(0, 0, 0, 0.15);
     }
 
     .sidebar-toggle {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       width: 100%;
-      padding: 8px 10px;
+      padding: 8px 12px;
       background: none;
       border: 1px solid transparent;
       border-radius: 8px;
-      color: var(--text-muted, #64748b);
+      color: #64748b;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 12.5px;
       font-weight: 500;
-      transition: all 0.15s;
+      transition: all 0.18s;
     }
 
     .sidebar.collapsed .sidebar-toggle {
@@ -337,9 +332,9 @@ export interface NavItem {
     }
 
     .sidebar-toggle:hover {
-      background: var(--bg-hover, #f1f5f9);
-      color: var(--text-primary, #0f172a);
-      border-color: var(--border-light, #e2e8f0);
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      border-color: rgba(255, 255, 255, 0.08);
     }
 
     /* === RIGHT SIDE === */
@@ -353,15 +348,16 @@ export interface NavItem {
 
     /* === HEADER === */
     .dashboard-header {
-      height: 60px;
-      min-height: 60px;
+      height: 64px;
+      min-height: 64px;
       background: #ffffff;
-      border-bottom: 1px solid var(--border-light, #e2e8f0);
+      border-bottom: 1px solid #e2e8f0;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 24px;
+      padding: 0 28px;
       z-index: 10;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
     }
 
     .header-left {
@@ -373,38 +369,39 @@ export interface NavItem {
     .mobile-menu-btn {
       display: none;
       background: none;
-      border: 1px solid var(--border-light, #e2e8f0);
-      border-radius: 6px;
-      padding: 6px;
-      color: var(--text-secondary, #475569);
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 7px;
+      color: #475569;
       cursor: pointer;
     }
 
     .header-page-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--text-primary, #0f172a);
+      font-size: 17px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.01em;
     }
 
     .header-right {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
     }
 
     .header-role-badge {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       font-size: 12px;
       font-weight: 600;
-      padding: 4px 10px;
+      padding: 4px 12px;
       border-radius: 20px;
     }
 
     .role-dot {
-      width: 6px;
-      height: 6px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
     }
 
@@ -412,19 +409,22 @@ export interface NavItem {
       display: flex;
       align-items: center;
       gap: 10px;
+      padding: 4px 8px;
+      border-radius: 8px;
     }
 
     .user-avatar-sm {
-      width: 32px;
-      height: 32px;
+      width: 34px;
+      height: 34px;
       border-radius: 50%;
       color: #fff;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 12.5px;
       font-weight: 700;
       flex-shrink: 0;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
 
     .user-meta {
@@ -433,15 +433,15 @@ export interface NavItem {
     }
 
     .user-name-sm {
-      font-size: 13px;
+      font-size: 13.5px;
       font-weight: 600;
-      color: var(--text-primary, #0f172a);
+      color: #0f172a;
       line-height: 1.2;
     }
 
     .user-team-sm {
       font-size: 11px;
-      color: var(--text-muted, #94a3b8);
+      color: #64748b;
       font-weight: 500;
     }
 
@@ -449,20 +449,20 @@ export interface NavItem {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 34px;
-      height: 34px;
+      width: 36px;
+      height: 36px;
       background: none;
-      border: 1px solid var(--border-light, #e2e8f0);
+      border: 1px solid #e2e8f0;
       border-radius: 8px;
-      color: var(--text-muted, #64748b);
+      color: #64748b;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.18s;
     }
 
     .logout-btn:hover {
-      background: var(--color-danger-bg, #fef2f2);
-      border-color: var(--color-danger-border, #fecaca);
-      color: var(--color-danger, #dc2626);
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #dc2626;
     }
 
     /* === CONTENT === */
@@ -478,7 +478,8 @@ export interface NavItem {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.3);
+      background: rgba(0,0,0,0.45);
+      backdrop-filter: blur(2px);
       z-index: 30;
     }
 
@@ -491,7 +492,7 @@ export interface NavItem {
       transform: translateX(-100%);
       transition: transform 0.25s ease;
       z-index: 40;
-      box-shadow: 4px 0 16px rgba(0,0,0,0.1);
+      box-shadow: 4px 0 24px rgba(0,0,0,0.25);
     }
 
     .mobile-sidebar.open {
@@ -519,17 +520,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   /**
    * Defined strictly around DealFlow360 problem statement and 5 roles:
    * ADMIN, SALES_REP, SALES_MANAGER, FINANCE (FINANCE_OPERATIONS), CUSTOMER
-   *
-   * For ADMIN, sidebar contains the exact 9 modules:
-   * 1. Dashboard
-   * 2. Quotations
-   * 3. Approvals
-   * 4. Fulfillment
-   * 5. Subscription
-   * 6. Invoices
-   * 7. Deal Health
-   * 8. Reports
-   * 9. Users
    */
   readonly allNav: NavItem[] = [
     // 1. Dashboard
@@ -537,8 +527,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       id: 'dashboard',
       label: 'Dashboard',
       path: '/dashboard/home',
-      section: 'MAIN',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>`,
       roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE']
     },
     // 2. Quotations
@@ -546,104 +535,91 @@ export class DashboardComponent implements OnInit, OnDestroy {
       id: 'quotations',
       label: 'Quotations',
       path: '/dashboard/pipeline',
-      section: 'SALES',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`,
       roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE']
     },
-    // 3. Approvals
+    // 3. Catalog & Pricing Architecture
+    {
+      id: 'catalog',
+      label: 'Catalog & Pricing',
+      path: '/dashboard/catalog',
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/><path d="M12 12v9"/></svg>`,
+      roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE']
+    },
+    // 4. Customers & Governance
+    {
+      id: 'customers',
+      label: 'Customers & Governance',
+      path: '/dashboard/customers',
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>`,
+      roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE']
+    },
+    // 5. Approvals
     {
       id: 'approvals',
       label: 'Approvals',
       path: '/dashboard/approval',
-      section: 'SALES',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
       roles: ['ADMIN', 'SALES_MANAGER', 'FINANCE']
     },
-    // 4. Fulfillment
+    // 6. Fulfillment
     {
       id: 'fulfillment',
       label: 'Fulfillment',
       path: '/dashboard/fulfillment',
-      section: 'SALES',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>`,
       roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE']
     },
-    // 5. Subscription
+    // 7. Subscription
     {
       id: 'subscription',
       label: 'Subscription',
       path: '/dashboard/subscription',
-      section: 'FINANCE',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`,
       roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE']
     },
-    // 6. Invoices
+    // 8. Invoices
     {
       id: 'invoices',
       label: 'Invoices',
       path: '/dashboard/invoices',
-      section: 'FINANCE',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h18M3 14h18M7 3v18M17 3v18"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h18M3 14h18M7 3v18M17 3v18"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
       roles: ['ADMIN', 'FINANCE']
     },
-    // 7. Deal Health
+    // 9. Deal Health
     {
       id: 'deal-health',
       label: 'Deal Health',
       path: '/dashboard/deal-health',
-      section: 'INTELLIGENCE',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
       roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE']
     },
-    // 8. Reports
+    // 10. Reports
     {
       id: 'reports',
       label: 'Reports',
       path: '/dashboard/reports',
-      section: 'INTELLIGENCE',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>`,
       roles: ['ADMIN', 'SALES_MANAGER', 'FINANCE']
     },
-    // 9. Users
+    // 11. Users (Admin Only)
     {
       id: 'users',
       label: 'Users',
       path: '/dashboard/users',
-      section: 'ADMIN',
-      icon: `<svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>`,
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>`,
       roles: ['ADMIN']
     }
   ];
 
-  visibleSections: { title: string; items: NavItem[] }[] = [];
+  visibleNavItems: NavItem[] = [];
 
-  trackSection = (_: number, s: { title: string }): string => s.title;
   trackItem = (_: number, item: NavItem): string => item.id;
 
-  private updateVisibleSections(role: UserRole) {
-    const allowed = role === 'ADMIN'
+  private updateVisibleNavItems(role: UserRole) {
+    this.visibleNavItems = role === 'ADMIN'
       ? this.allNav
       : this.allNav.filter(n => n.roles.includes(role));
-
-    // Group into structured sections
-    const sections: { title: string; items: NavItem[] }[] = [];
-
-    const main = allowed.filter(i => i.section === 'MAIN');
-    if (main.length > 0) sections.push({ title: '', items: main });
-
-    const sales = allowed.filter(i => i.section === 'SALES');
-    if (sales.length > 0) sections.push({ title: 'Sales & Fulfillment', items: sales });
-
-    const finance = allowed.filter(i => i.section === 'FINANCE');
-    if (finance.length > 0) sections.push({ title: 'Billing & Finance', items: finance });
-
-    const intel = allowed.filter(i => i.section === 'INTELLIGENCE');
-    if (intel.length > 0) sections.push({ title: 'Intelligence', items: intel });
-
-    const admin = allowed.filter(i => i.section === 'ADMIN');
-    if (admin.length > 0) sections.push({ title: 'Administration', items: admin });
-
-    this.visibleSections = sections;
   }
 
   get currentPageTitle(): string {
@@ -658,13 +634,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.currentRole = this.authService.currentRole || 'ADMIN';
-    this.updateVisibleSections(this.currentRole);
+    this.updateVisibleNavItems(this.currentRole);
 
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
         if (role && role !== 'GUEST') {
           this.currentRole = role;
-          this.updateVisibleSections(role);
+          this.updateVisibleNavItems(role);
           if (role === 'CUSTOMER') {
             this.router.navigate(['/portal/CUST-TOKEN-ACME']);
           }

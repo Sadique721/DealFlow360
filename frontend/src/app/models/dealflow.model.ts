@@ -7,62 +7,215 @@ export interface User {
   active?: boolean;
 }
 
-export interface CustomerTier {
-  id: number;
+export interface CustomerTierRequest {
   tierName: string;
+  maxDiscountPercent: number;
+  description?: string;
+}
+
+export interface CustomerTier {
+  id?: number;
+  tierName?: string;
   code?: string;
   minAnnualSpend?: number;
+  maxDiscountPercent?: number;
   maxDiscountFloorPct?: number;
   freightDiscountPct?: number;
   defaultDiscountPct?: number;
   maxAllowedDiscountPct?: number;
+  description?: string;
+}
+
+export interface CustomerRequest {
+  name: string;
+  tier: string;
+  email: string;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+  portalUserId?: number;
 }
 
 export interface Customer {
   id: number;
   name: string;
+  tier: any;
+  tierMaxDiscount?: number;
+  email?: string;
+  contactPerson?: string;
+  phone?: string;
+  address?: string;
+  portalUserId?: number;
   code?: string;
   companyName?: string;
-  email?: string;
   contactEmail?: string;
-  phone?: string;
   shippingAddress?: string;
   destinationRegion?: string;
-  tier: CustomerTier;
+  createdAt?: string;
+}
+
+export interface ApprovalChainRequest {
+  minScore: number;
+  maxScore: number;
+  requiredLevel: 'MANAGER' | 'MANAGER_THEN_FINANCE' | string;
+  description?: string;
+}
+
+export interface ApprovalChainRule {
+  id: number;
+  minScore: number;
+  maxScore: number;
+  requiredLevel: 'MANAGER' | 'MANAGER_THEN_FINANCE' | string;
+  description?: string;
+}
+
+export interface CategoryRequest {
+  name: string;
+  maxDiscountPercent: number;
+  sensitivityGamma?: number;
+  description?: string;
 }
 
 export interface Category {
   id: number;
   name: string;
-  code: string;
-  maxDiscountCeilingPct: number;
-  standardMarginTargetPct: number;
+  maxDiscountPercent?: number;
+  maxDiscountCeilingPct?: number;
+  sensitivityGamma?: number;
+  standardMarginTargetPct?: number;
+  code?: string;
+  description?: string;
+}
+
+export interface ProductRequest {
+  name: string;
+  categoryId: number;
+  basePrice: number;
+  costPrice?: number;
+  unitOfMeasure?: string;
+  taxPercentage?: number;
+  isSubscription?: boolean;
+  recurringInterval?: string;
+  stockOnHand?: number;
+  active?: boolean;
+  description?: string;
 }
 
 export interface Product {
   id: number;
   name: string;
-  sku: string;
-  type: 'HARDWARE' | 'SOFTWARE_SUBSCRIPTION' | 'SERVICE' | 'SUBSCRIPTION' | string;
+  sku?: string;
+  type?: 'HARDWARE' | 'SOFTWARE_SUBSCRIPTION' | 'SERVICE' | 'SUBSCRIPTION' | string;
+  categoryId?: number;
+  categoryName?: string;
+  categoryMaxDiscount?: number;
   basePrice: number;
-  unitCost: number;
+  costPrice?: number;
+  unitCost?: number;
+  unitOfMeasure?: string;
+  taxPercentage?: number;
+  isSubscription?: boolean;
+  recurringInterval?: string;
+  stockOnHand?: number;
   weightKg?: number;
-  category: Category;
+  category?: Category;
   billingFrequency?: string;
   prorationUnit?: string;
+  description?: string;
+  active?: boolean;
+  createdAt?: string;
+}
+
+export interface PriceListRequest {
+  customerTier: string;
+  currency?: string;
+  discountAdjustmentPercent: number;
+}
+
+export interface PriceList {
+  id: number;
+  customerTier: string;
+  currency: string;
+  discountAdjustmentPercent: number;
+}
+
+export interface LineItemRequest {
+  id?: number;
+  productId: number;
+  quantity: number;
+  unitPrice?: number;
+  discountPercent?: number;
+  lineType?: string;
+  subscriptionPlanId?: number;
+}
+
+export interface QuotationCreateRequest {
+  customerId: number;
+  salesRepId?: number;
+  promisedDeliveryDate?: string;
+  lines: LineItemRequest[];
+}
+
+export interface QuotationCalculateRequest {
+  customerId?: number;
+  lines: LineItemRequest[];
+}
+
+export interface CalculatedLineResponse {
+  productId: number;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  costPrice: number;
+  discountPercent: number;
+  discountAmount: number;
+  netPrice: number;
+  taxPercent: number;
+  taxAmount: number;
+  lineTotal: number;
+  lineCost: number;
+  marginAmount: number;
+  marginPercentage: number;
+  overagePoints: number;
+  status: string; // OK, OVER
+  lineType: string;
+}
+
+export interface QuotationCalculateResponse {
+  subtotalAmount: number;
+  totalDiscountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  totalCost: number;
+  totalMarginAmount: number;
+  marginPercentage: number;
+  blendedRiskScore: number;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  requiresApproval: boolean;
+  requiresFinance: boolean;
+  explanation: string;
+  lines: CalculatedLineResponse[];
 }
 
 export interface QuotationLine {
   id?: number;
   product: Product;
   quantity: number;
-  unitListPrice: number;
-  unitDiscountPct: number;
-  unitDiscountAmount: number;
-  unitFinalPrice: number;
+  unitPrice?: number;
+  unitListPrice?: number;
+  costPrice?: number;
+  lineCost?: number;
+  discountPercent?: number;
+  unitDiscountPct?: number;
+  unitDiscountAmount?: number;
+  unitFinalPrice?: number;
   lineTotal: number;
-  lineCost: number;
-  lineMarginPct: number;
+  marginAmount?: number;
+  lineMarginPct?: number;
+  lineType?: string; // ONE_TIME, RECURRING
+  subscriptionPlanId?: number;
+  overagePoints?: number;
+  status?: string; // OK, OVER
   requiresLineApproval?: boolean;
   approvalReason?: string;
 }
@@ -72,22 +225,29 @@ export interface Quotation {
   quoteNumber: string;
   customer: Customer;
   salesRep: User;
-  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SENT_TO_CUSTOMER' | 'UNDER_NEGOTIATION' | 'CONFIRMED' | 'ACCEPTED' | 'FULFILLED' | 'REJECTED' | string;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'RETURNED' | 'SENT_TO_CUSTOMER' | 'UNDER_NEGOTIATION' | 'CONFIRMED' | 'ACCEPTED' | 'FULFILLED' | 'REJECTED' | 'CANCELLED' | string;
   subtotalAmount: number;
   totalDiscountAmount: number;
   blendedDiscountPct: number;
-  shippingAmount?: number;
-  taxAmount?: number;
   totalAmount: number;
+  totalCost?: number;
   totalCostAmount?: number;
+  totalMarginAmount?: number;
+  marginPercentage?: number;
   marginPct: number;
+  blendedRiskScore?: number;
   riskScore: number;
-  riskSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
+  riskSeverity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
+  version?: number;
+  portalToken?: string;
+  portalAccessToken?: string;
+  promisedDeliveryDate?: string;
   requiresManagerApproval?: boolean;
   requiresFinanceApproval?: boolean;
-  promisedDeliveryDate?: string;
-  portalAccessToken?: string;
+  shippingAmount?: number;
+  taxAmount?: number;
   lines: QuotationLine[];
+  lastActivityAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -98,20 +258,28 @@ export interface LineOverageDetail {
   revenueWeightPct: number;
   appliedDiscountPct: number;
   allowedThresholdPct: number;
-  overagePct: number;
-  weightedContribution: number;
+  overagePoints?: number;
+  overagePct?: number;
+  weightedContribution?: number;
+  isCulprit?: boolean;
 }
 
 export interface RiskCalculationResult {
-  blendedDiscountPct: number;
-  overallMarginPct: number;
-  riskScore: number;
-  riskSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  strictestThresholdPct: number;
-  requiresManagerApproval: boolean;
-  requiresFinanceApproval: boolean;
-  approvalRoutingDescription: string;
-  culpritLineDetails: LineOverageDetail[];
+  blendedDiscountPct?: number;
+  overallMarginPct?: number;
+  blendedRiskScore?: number;
+  riskScore?: number;
+  riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
+  riskSeverity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
+  strictestThresholdPct?: number;
+  requiresApproval?: boolean;
+  requiresFinance?: boolean;
+  requiresManagerApproval?: boolean;
+  requiresFinanceApproval?: boolean;
+  fullExplanation?: string;
+  approvalRoutingDescription?: string;
+  lineDetails?: LineOverageDetail[];
+  culpritLineDetails?: LineOverageDetail[];
 }
 
 export interface ApprovalStep {

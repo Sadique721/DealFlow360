@@ -1,7 +1,15 @@
-﻿import { Injectable } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
-import { Quotation, RiskCalculationResult, Product, Customer, UpsellSuggestion } from '../models/dealflow.model';
+import {
+  Quotation,
+  RiskCalculationResult,
+  UpsellSuggestion,
+  QuotationCreateRequest,
+  LineItemRequest,
+  QuotationCalculateRequest,
+  QuotationCalculateResponse
+} from '../models/dealflow.model';
 
 @Injectable({
   providedIn: 'root'
@@ -9,32 +17,44 @@ import { Quotation, RiskCalculationResult, Product, Customer, UpsellSuggestion }
 export class QuotationService {
   constructor(private api: ApiService) {}
 
-  getQuotations(status?: string): Observable<Quotation[]> {
-    return this.api.get<Quotation[]>('quotations', status ? { status } : undefined);
+  getQuotations(params?: { repId?: number; status?: string }): Observable<Quotation[]> {
+    return this.api.get<Quotation[]>('quotations', params);
   }
 
   getQuotationById(id: number): Observable<Quotation> {
     return this.api.get<Quotation>(`quotations/${id}`);
   }
 
-  createQuotation(quoteData: any): Observable<Quotation> {
+  calculatePreview(req: QuotationCalculateRequest): Observable<QuotationCalculateResponse> {
+    return this.api.post<QuotationCalculateResponse>('quotations/calculate', req);
+  }
+
+  createQuotation(quoteData: QuotationCreateRequest): Observable<Quotation> {
     return this.api.post<Quotation>('quotations', quoteData);
   }
 
-  updateQuotation(id: number, quoteData: any): Observable<Quotation> {
-    return this.api.put<Quotation>(`quotations/${id}`, quoteData);
+  updateQuotationLines(id: number, lines: LineItemRequest[]): Observable<Quotation> {
+    return this.api.put<Quotation>(`quotations/${id}/lines`, lines);
+  }
+
+  submitForApproval(id: number): Observable<any> {
+    return this.api.post<any>(`quotations/${id}/submit`, {});
+  }
+
+  confirmQuotation(id: number): Observable<Quotation> {
+    return this.api.post<Quotation>(`quotations/${id}/confirm`, {});
+  }
+
+  cancelQuotation(id: number): Observable<Quotation> {
+    return this.api.post<Quotation>(`quotations/${id}/cancel`, {});
   }
 
   calculateRisk(id: number): Observable<RiskCalculationResult> {
     return this.api.get<RiskCalculationResult>(`quotations/${id}/risk-breakdown`);
   }
 
-  submitForApproval(id: number): Observable<any> {
-    return this.api.post<any>(`quotations/${id}/submit-approval`, {});
-  }
-
-  confirmQuotation(id: number): Observable<any> {
-    return this.api.post<any>(`quotations/${id}/confirm`, {});
+  getVersions(id: number): Observable<any[]> {
+    return this.api.get<any[]>(`quotations/${id}/versions`);
   }
 
   getUpsellSuggestions(id: number): Observable<UpsellSuggestion[]> {

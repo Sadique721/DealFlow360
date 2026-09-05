@@ -5,6 +5,7 @@ import com.dealflow360.approval.ApprovalRequestRepository;
 import com.dealflow360.approval.ApprovalStep;
 import com.dealflow360.approval.ApprovalStepRepository;
 import com.dealflow360.audit.AuditService;
+import com.dealflow360.auth.AuthUser;
 import com.dealflow360.auth.User;
 import com.dealflow360.auth.UserRepository;
 import com.dealflow360.catalog.Customer;
@@ -17,6 +18,8 @@ import com.dealflow360.discount.LineOverageDetail;
 import com.dealflow360.discount.RiskCalculationResult;
 import com.dealflow360.discount.RiskScoreEngine;
 import com.dealflow360.quotation.dto.LineItemRequest;
+import com.dealflow360.quotation.dto.QuotationCalculateRequest;
+import com.dealflow360.quotation.dto.QuotationCalculateResponse;
 import com.dealflow360.quotation.dto.QuotationCreateRequest;
 import com.dealflow360.websocket.WebSocketPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -72,11 +75,35 @@ public class QuotationService {
         this.webSocketPublisher = webSocketPublisher;
     }
 
-    public List<Quotation> listQuotations(Long repId, String status) {
+    public List<Quotation> listQuotations(Long repId, String status, AuthUser authUser) {
+        String role = authUser != null && authUser.getUser() != null ? authUser.getUser().getRole() : "ADMIN";
+        Long currentUserId = authUser != null && authUser.getUser() != null ? authUser.getUser().getId() : null;
+
+        if ("SALES_REP".equals(role) && currentUserId != null) {
+            if (status != null && !status.isBlank()) {
+                return quotationRepository.findBySalesRepIdAndStatus(currentUserId, status);
+            }
+            return quotationRepository.findBySalesRepId(currentUserId);
+        }
+
+        if ("CUSTOMER".equals(role) && currentUserId != null) {
+            Optional<Customer> custOpt = customerRepository.findByPortalUserId(currentUserId);
+            if (custOpt.isEmpty() && authUser.getUsername() != null) {
+                custOpt = customerRepository.findByEmail(authUser.getUsername());
+            }
+            if (custOpt.isPresent()) {
+                Long custId = custOpt.get().getId();
+                if (status != null && !status.isBlank()) {
+                    return quotationRepository.findByCustomerIdAndStatus(custId, status);
+                }
+                return quotationRepository.findByCustomerId(custId);
+            }
+            return List.of();
+        }
+
+        // ADMIN, SALES_MANAGER, FINANCE can view all (or scoped by repId/status)
         if (repId != null && status != null && !status.isBlank()) {
-            return quotationRepository.findBySalesRepId(repId).stream()
-                    .filter(q -> q.getStatus().equalsIgnoreCase(status))
-                    .toList();
+            return quotationRepository.findBySalesRepIdAndStatus(repId, status);
         } else if (repId != null) {
             return quotationRepository.findBySalesRepId(repId);
         } else if (status != null && !status.isBlank()) {
@@ -90,9 +117,146 @@ public class QuotationService {
                 .orElseThrow(() -> new RuntimeException("Quotation not found: " + id));
     }
 
+    public Quotation getQuotationByIdSecured(Long id, AuthUser authUser) {
+        Quotation q = getQuotationById(id);
+        if (authUser == null || authUser.getUser() == null) {
+            return q;
+        }
+        String role = authUser.getUser().getRole();
+        Long userId = authUser.getUser().getId();
+
+        if ("SALES_REP".equals(role)) {
+            if (q.getSalesRep() != null && !userId.equals(q.getSalesRep().getId())) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                        "Access Denied: You can only view quotations assigned to you.");
+            }
+        } else if ("CUSTOMER".equals(role)) {
+            if (q.getCustomer() != null) {
+                boolean matchesPortal = userId.equals(q.getCustomer().getPortalUserId());
+                boolean matchesEmail = authUser.getUsername().equalsIgnoreCase(q.getCustomer().getEmail());
+                if (!matchesPortal && !matchesEmail) {
+                    throw new org.springframework.security.access.AccessDeniedException(
+                            "Access Denied: You can only view quotations belonging to your company.");
+                }
+            }
+        }
+        return q;
+    }
+
     public Quotation getQuotationByPortalToken(String portalToken) {
         return quotationRepository.findByPortalToken(portalToken)
                 .orElseThrow(() -> new RuntimeException("Invalid portal token: " + portalToken));
+    }
+
+    public QuotationCalculateResponse calculateQuotationPreview(QuotationCalculateRequest request) {
+        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal totalDiscountAmount = BigDecimal.ZERO;
+        BigDecimal totalTaxAmount = BigDecimal.ZERO;
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        BigDecimal totalCost = BigDecimal.ZERO;
+
+        BigDecimal customerTierCeiling = BigDecimal.valueOf(5.00); // Default Bronze
+        if (request.getCustomerId() != null) {
+            Optional<Customer> custOpt = customerRepository.findById(request.getCustomerId());
+            if (custOpt.isPresent() && custOpt.get().getTier() != null) {
+                Optional<CustomerTier> tierOpt = customerTierRepository.findByTierName(custOpt.get().getTier());
+                if (tierOpt.isPresent()) {
+                    customerTierCeiling = tierOpt.get().getMaxDiscountPercent();
+                }
+            }
+        }
+
+        List<QuotationCalculateResponse.CalculatedLineResponse> calcLines = new ArrayList<>();
+        List<RiskScoreEngine.LineInput> riskInputs = new ArrayList<>();
+
+        if (request.getLines() != null) {
+            for (int i = 0; i < request.getLines().size(); i++) {
+                LineItemRequest lr = request.getLines().get(i);
+                Product product = productRepository.findById(lr.getProductId())
+                        .orElseThrow(() -> new RuntimeException("Product not found: " + lr.getProductId()));
+
+                int qty = lr.getQuantity() != null && lr.getQuantity() > 0 ? lr.getQuantity() : 1;
+                BigDecimal unitPrice = lr.getUnitPrice() != null ? lr.getUnitPrice() : product.getBasePrice();
+                BigDecimal costPrice = product.getCostPrice();
+                BigDecimal discountPercent = lr.getDiscountPercent() != null ? lr.getDiscountPercent() : BigDecimal.ZERO;
+
+                BigDecimal lineGross = unitPrice.multiply(BigDecimal.valueOf(qty));
+                BigDecimal discountFactor = discountPercent.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+                BigDecimal lineDiscountAmount = lineGross.multiply(discountFactor).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal netPrice = unitPrice.multiply(BigDecimal.ONE.subtract(discountFactor)).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal lineTotal = lineGross.subtract(lineDiscountAmount).setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal taxPercent = product.getTaxPercentage() != null ? product.getTaxPercentage() : BigDecimal.ZERO;
+                BigDecimal lineTaxAmount = lineTotal.multiply(taxPercent.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)).setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal lineCost = costPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal marginAmount = lineTotal.subtract(lineCost).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal lineMarginPct = lineTotal.compareTo(BigDecimal.ZERO) > 0
+                        ? marginAmount.divide(lineTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+
+                subtotal = subtotal.add(lineGross);
+                totalDiscountAmount = totalDiscountAmount.add(lineDiscountAmount);
+                totalTaxAmount = totalTaxAmount.add(lineTaxAmount);
+                totalAmount = totalAmount.add(lineTotal);
+                totalCost = totalCost.add(lineCost);
+
+                String lineType = lr.getLineType() != null ? lr.getLineType() : (Boolean.TRUE.equals(product.getIsSubscription()) ? "RECURRING" : "ONE_TIME");
+
+                calcLines.add(QuotationCalculateResponse.CalculatedLineResponse.builder()
+                        .productId(product.getId())
+                        .productName(product.getName())
+                        .quantity(qty)
+                        .unitPrice(unitPrice)
+                        .costPrice(costPrice)
+                        .discountPercent(discountPercent)
+                        .discountAmount(lineDiscountAmount)
+                        .netPrice(netPrice)
+                        .taxPercent(taxPercent)
+                        .taxAmount(lineTaxAmount)
+                        .lineTotal(lineTotal)
+                        .lineCost(lineCost)
+                        .marginAmount(marginAmount)
+                        .marginPercentage(lineMarginPct)
+                        .status("OK")
+                        .overagePoints(BigDecimal.ZERO)
+                        .lineType(lineType)
+                        .build());
+
+                riskInputs.add(new RiskScoreEngine.LineInput((long) i, product, discountPercent, lineTotal));
+            }
+        }
+
+        BigDecimal totalMarginAmount = totalAmount.subtract(totalCost);
+        BigDecimal marginPercentage = totalAmount.compareTo(BigDecimal.ZERO) > 0
+                ? totalMarginAmount.divide(totalAmount, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        RiskCalculationResult riskResult = riskScoreEngine.calculateRisk(customerTierCeiling, riskInputs);
+
+        if (riskResult.getLineDetails() != null && riskResult.getLineDetails().size() == calcLines.size()) {
+            for (int i = 0; i < calcLines.size(); i++) {
+                LineOverageDetail lod = riskResult.getLineDetails().get(i);
+                calcLines.get(i).setOveragePoints(lod.getOveragePoints());
+                calcLines.get(i).setStatus(Boolean.TRUE.equals(lod.getIsCulprit()) ? "OVER" : "OK");
+            }
+        }
+
+        return QuotationCalculateResponse.builder()
+                .subtotalAmount(subtotal.setScale(2, RoundingMode.HALF_UP))
+                .totalDiscountAmount(totalDiscountAmount.setScale(2, RoundingMode.HALF_UP))
+                .taxAmount(totalTaxAmount.setScale(2, RoundingMode.HALF_UP))
+                .totalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP))
+                .totalCost(totalCost.setScale(2, RoundingMode.HALF_UP))
+                .totalMarginAmount(totalMarginAmount.setScale(2, RoundingMode.HALF_UP))
+                .marginPercentage(marginPercentage)
+                .blendedRiskScore(riskResult.getBlendedRiskScore())
+                .riskLevel(riskResult.getRiskLevel())
+                .requiresApproval(riskResult.getRequiresApproval())
+                .requiresFinance(riskResult.getRequiresFinance())
+                .explanation(riskResult.getFullExplanation())
+                .lines(calcLines)
+                .build();
     }
 
     public Quotation createQuotation(QuotationCreateRequest request, String repEmail) {
@@ -138,8 +302,12 @@ public class QuotationService {
         return quotation;
     }
 
-    public Quotation updateQuotationLines(Long quotationId, List<LineItemRequest> lineRequests, String changedBy) {
-        Quotation quotation = getQuotationById(quotationId);
+    public Quotation updateQuotationLines(Long quotationId, List<LineItemRequest> lineRequests, String changedBy, AuthUser authUser) {
+        Quotation quotation = getQuotationByIdSecured(quotationId, authUser);
+
+        if ("PENDING_APPROVAL".equals(quotation.getStatus()) || "CONFIRMED".equals(quotation.getStatus()) || "CLOSED".equals(quotation.getStatus())) {
+            throw new IllegalStateException("Cannot edit quotation lines while status is " + quotation.getStatus());
+        }
 
         BigDecimal beforeMargin = quotation.getMarginPercentage();
 
@@ -169,6 +337,28 @@ public class QuotationService {
         wsPayload.put("blendedRiskScore", quotation.getBlendedRiskScore());
         webSocketPublisher.publishMarginUpdate(quotation.getId(), wsPayload);
 
+        return quotation;
+    }
+
+    public Quotation confirmQuotation(Long quotationId, String confirmedBy) {
+        Quotation quotation = getQuotationById(quotationId);
+        quotation.setStatus("CONFIRMED");
+        quotation.setLastActivityAt(LocalDateTime.now());
+        quotationRepository.save(quotation);
+
+        auditService.log("QUOTATION", quotation.getId(), "CONFIRMED", confirmedBy,
+                quotation.getStatus(), "CONFIRMED", "Quotation confirmed and converted to order", BigDecimal.ZERO);
+        return quotation;
+    }
+
+    public Quotation cancelQuotation(Long quotationId, String cancelledBy) {
+        Quotation quotation = getQuotationById(quotationId);
+        quotation.setStatus("CANCELLED");
+        quotation.setLastActivityAt(LocalDateTime.now());
+        quotationRepository.save(quotation);
+
+        auditService.log("QUOTATION", quotation.getId(), "CANCELLED", cancelledBy,
+                quotation.getStatus(), "CANCELLED", "Quotation cancelled", BigDecimal.ZERO);
         return quotation;
     }
 
