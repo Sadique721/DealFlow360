@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Backend-Spring_Boot_3.4.3-6DB33F?style=for-the-badge&logo=springboot&logoColor=white" alt="Spring Boot" />
   <img src="https://img.shields.io/badge/Java-21_LTS-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" alt="Java 21" />
   <img src="https://img.shields.io/badge/Frontend-Angular_21.2-DD0031?style=for-the-badge&logo=angular&logoColor=white" alt="Angular 21" />
-  <img src="https://img.shields.io/badge/Database-MySQL_8.0_Aiven_Cloud-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="Aiven Cloud MySQL" />
+  <img src="https://img.shields.io/badge/Database-MySQL_8.0_Local-4479A1?style=for-the-badge&logo=mysql&logoColor=white" alt="Local MySQL 8.0" />
   <img src="https://img.shields.io/badge/Assets-Cloudinary_CDN-3448C5?style=for-the-badge&logo=cloudinary&logoColor=white" alt="Cloudinary" />
   <img src="https://img.shields.io/badge/Architecture-Clean_%26_Domain--Driven-8B5CF6?style=for-the-badge&logo=diagramsdotnet&logoColor=white" alt="Clean DDD" />
   <img src="https://img.shields.io/badge/Tests-32%20Passed%20(100%25)-success?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests 100% Passed" />
@@ -52,7 +52,7 @@ In contemporary enterprise B2B sales cycles, sales teams face severe structural 
 4. **Subscription Proration Chaos:** Mid-cycle contract amendments, renewals, and co-terminus upgrades are calculated in spreadsheets with rounding errors, losing enterprise recurring revenue.
 5. **Customer Negotiation Information Leakage:** Shared PDF quotes expose internal cost of goods sold (COGS) and margin targets, severely compromising negotiating leverage.
 
-**DealFlow360** is an enterprise-grade autonomous Sales Operations, CPQ (Configure, Price, Quote), and Deal Governance Engine engineered specifically for the **Odoo Combat Enterprise Hackathon**. Built with **Spring Boot 3.4.3 (Java 21 LTS)**, **Angular 21 Standalone**, and **Aiven Cloud MySQL 8.0 with SSL**, DealFlow360 unifies real-time risk scoring, explainable multi-tier approvals, least-cost warehouse fulfillment, day-exact subscription billing, and zero-leakage magic-link negotiation portals.
+**DealFlow360** is an enterprise-grade autonomous Sales Operations, CPQ (Configure, Price, Quote), and Deal Governance Engine engineered specifically for the **Odoo Combat Enterprise Hackathon**. Built with **Spring Boot 3.4.3 (Java 21 LTS)**, **Angular 21 Standalone**, and **Local MySQL 8.0 Database**, DealFlow360 unifies real-time risk scoring, explainable multi-tier approvals, least-cost warehouse fulfillment, day-exact subscription billing, and zero-leakage magic-link negotiation portals.
 
 ---
 
@@ -103,8 +103,8 @@ graph TD
         Engine_Anomaly["Z-Score Deal Health Anomaly Radar"]
     end
 
-    subgraph "Persistence & Cloud Services"
-        DB[("Aiven Cloud MySQL 8.0 (SSL Encrypted)")]
+    subgraph "Persistence & Local Infrastructure"
+        DB[("Local MySQL 8.0 Database (InnoDB)")]
         CDN["Cloudinary Cloud Media CDN (PDFs & Assets)"]
         SMTP["Google Workspace SMTP Mailer (TLS 587)"]
         Pay["Razorpay Automated Payment Gateway"]
@@ -288,7 +288,7 @@ pie title DealFlow360 Test Spectrum Distribution (100% Pass)
 | **Smoke / Sanity** | `com.dealflow360.smoke.SystemSmokeSanityTest` | 1 | ✅ PASS | Spring Boot container startup sanity, CDI bean graph integrity, Flyway database schema migration baseline. |
 | **User Acceptance (UAT)** | `com.dealflow360.uat.UserAcceptanceJourneyTest` | 3 | ✅ PASS | Complete multi-item Capex/Opex quotation, 2-tier approval escalation, zero-cost magic portal negotiation, and split logistics. |
 | **Security & Privacy** | `com.dealflow360.integration.CustomerPortalSecurityIntegrationTest` | 2 | ✅ PASS | Strict stripping of COGS and internal margins in public DTOs; counter-offer policy lock; token validation. |
-| **Cloud Integration** | `com.dealflow360.integration.AivenDbConnectivityTest` | 1 | ✅ PASS | Live SSL connection handshake to Aiven Cloud MySQL 8.0 instance with dialect verification. |
+| **Database Integration** | `com.dealflow360.integration.LocalDatabaseConnectivityTest` | 1 | ✅ PASS | Live connection handshake to Local MySQL 8.0 instance (`dealflow360_db`) with dialect verification. |
 | **Approval Integration**| `com.dealflow360.integration.ApprovalHierarchyIntegrationTest` | 3 | ✅ PASS | Multi-tier approval routing, role authorization checks, rebalance calculation recommendations. |
 | **Quotation Workflow**| `com.dealflow360.integration.QuotationWorkflowIntegrationTest` | 1 | ✅ PASS | Quote creation, net pricing, tax calculations, blended discount calculations, and margin snapshots. |
 | **Domain Risk Engine** | `com.dealflow360.discount.RiskScoreEngineTest` | 2 | ✅ PASS | Revenue-weighted blended discount overage calculation and customer tier risk factors. |
@@ -386,7 +386,7 @@ sequenceDiagram
     actor Customer as Customer Prospect
     participant Gateway as Security Gateway
     participant DTO as CustomerPortalDTO
-    participant DB as Aiven Cloud Database
+    participant DB as Local MySQL Database
 
     Customer->>Gateway: Access /portal/{magicToken}
     Gateway->>DB: Validate Token & Expiration
@@ -475,7 +475,7 @@ npm start
 
 | Service Provider | Service Role | Configuration State | Verified Status |
 | :--- | :--- | :--- | :---: |
-| **Aiven Cloud** | MySQL 8.0 Database (SSL) | Host: `mysql-37cf9bdf-dealflow360.e.aivencloud.com:20904` | ✅ CONNECTED |
+| **Local MySQL 8.0** | Relational Database (InnoDB) | Host: `localhost:3306/dealflow360_db` | ✅ CONNECTED |
 | **Cloudinary** | Digital Asset & PDF CDN | Cloud Name: `djhup0v4u` / Folder: `dealflow360` | ✅ ACTIVE |
 | **Google Workspace** | Enterprise SMTP Mailer | Host: `smtp.gmail.com:587` (STARTTLS) | ✅ VERIFIED |
 | **Razorpay** | Payment Gateway Sandbox | Key ID: `rzp_test_placeholder_dealflow360` | ✅ ACTIVE |
