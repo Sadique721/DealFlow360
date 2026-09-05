@@ -141,8 +141,8 @@ type TabMode = 'login' | 'signup';
             </div>
 
             <!-- Error / Success Banners -->
-            <div class="alert-error" *ngIf="signupError">
-              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <div class="alert-error" *ngIf="signupError" id="signupErrorBanner">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0">
                 <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
               </svg>
               <span>{{ signupError }}</span>
@@ -157,17 +157,17 @@ type TabMode = 'login' | 'signup';
             <form (ngSubmit)="handleSignup()" class="auth-form">
               <div class="form-group">
                 <label class="form-label">Full Name</label>
-                <input type="text" class="form-control" [(ngModel)]="signup.name" name="signupName" placeholder="e.g. Alex Mercer" required/>
+                <input type="text" class="form-control" [class.input-error]="signupError" [(ngModel)]="signup.name" name="signupName" placeholder="e.g. Alex Mercer" (ngModelChange)="clearSignupError()" required/>
               </div>
 
               <div class="form-group">
                 <label class="form-label">Work Email</label>
-                <input type="email" class="form-control" [(ngModel)]="signup.email" name="signupEmail" placeholder="e.g. buyer@company.com" required/>
+                <input type="email" class="form-control" [class.input-error]="signupError" [(ngModel)]="signup.email" name="signupEmail" placeholder="e.g. buyer@company.com" (ngModelChange)="clearSignupError()" required/>
               </div>
 
               <div class="form-group">
                 <label class="form-label">Company / Organization</label>
-                <input type="text" class="form-control" [(ngModel)]="signup.company" name="signupCompany" placeholder="e.g. Acme Corp" required/>
+                <input type="text" class="form-control" [class.input-error]="signupError" [(ngModel)]="signup.company" name="signupCompany" placeholder="e.g. Acme Corp" (ngModelChange)="clearSignupError()" required/>
               </div>
 
               <div class="form-group">
@@ -176,9 +176,11 @@ type TabMode = 'login' | 'signup';
                   <input
                     [type]="showSignupPw ? 'text' : 'password'"
                     class="form-control"
+                    [class.input-error]="signupError"
                     [(ngModel)]="signup.password"
                     name="signupPassword"
                     placeholder="Min 6 characters"
+                    (ngModelChange)="clearSignupError()"
                     required
                   />
                   <button type="button" class="eye-btn" (click)="showSignupPw=!showSignupPw" [attr.aria-label]="showSignupPw ? 'Hide password' : 'Show password'">
@@ -197,15 +199,18 @@ type TabMode = 'login' | 'signup';
                 <input
                   [type]="showSignupPw ? 'text' : 'password'"
                   class="form-control"
+                  [class.input-error]="signupError"
                   [(ngModel)]="signup.confirmPassword"
                   name="signupConfirm"
                   placeholder="Re-enter password"
+                  (ngModelChange)="clearSignupError()"
                   required
                 />
               </div>
 
-              <button type="submit" class="btn btn-primary btn-lg btn-block" [disabled]="signupLoading">
-                {{ signupLoading ? 'Creating account...' : 'Create Customer Account' }}
+              <button type="submit" class="btn btn-primary btn-lg btn-block" [class.btn-error-state]="signupError && !signupLoading" [disabled]="signupLoading">
+                <span *ngIf="signupLoading" class="btn-spinner"></span>
+                {{ signupLoading ? 'Creating account\u2026' : signupError ? 'Try Again' : 'Create Customer Account' }}
               </button>
 
               <p class="switch-tab">
@@ -558,27 +563,51 @@ export class LoginComponent implements OnInit {
     if (this.loginError) this.loginError = '';
   }
 
+  clearSignupError() {
+    if (this.signupError) this.signupError = '';
+  }
+
   async handleLogin() {
+    // Clear previous error state
     this.loginError = '';
-    if (!this.loginEmail.trim() || !this.loginPassword) {
-      this.loginError = 'Please enter both your email address and password.';
+
+    // Client-side validation
+    if (!this.loginEmail.trim()) {
+      this.loginError = 'Please enter your email address.';
+      return;
+    }
+    if (!this.loginPassword) {
+      this.loginError = 'Please enter your password.';
+      return;
+    }
+    const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRx.test(this.loginEmail.trim())) {
+      this.loginError = 'Please enter a valid email address.';
       return;
     }
 
     this.loginLoading = true;
+    let result: { success: boolean; error?: string };
     try {
-      const result = await this.authService.loginWithCredentials(this.loginEmail.trim(), this.loginPassword);
-      if (!result.success) {
-        this.loginLoading = false;
-        this.loginError = result.error || 'Authentication failed. Please verify your credentials.';
-        return;
-      }
-      await this.redirectAfterLogin();
+      result = await this.authService.loginWithCredentials(this.loginEmail.trim(), this.loginPassword);
     } catch {
       this.loginLoading = false;
       this.loginError = 'Unable to connect to authentication service. Please check server status.';
-    } finally {
+      return;
+    }
+
+    if (!result.success) {
       this.loginLoading = false;
+      this.loginError = result.error || 'Authentication failed. Please verify your credentials.';
+      return;
+    }
+
+    // Success — navigate WITHOUT resetting loading (avoid button flicker during navigation)
+    try {
+      await this.redirectAfterLogin();
+    } catch {
+      this.loginLoading = false;
+      this.loginError = 'Login succeeded but navigation failed. Please refresh the page.';
     }
   }
 
@@ -587,8 +616,22 @@ export class LoginComponent implements OnInit {
     this.signupSuccess = '';
     const { name, email, company, password, confirmPassword } = this.signup;
 
-    if (!name.trim() || !email.trim() || !company.trim()) {
-      this.signupError = 'Name, email and company are required.';
+    // Client-side validation — fast, no network
+    if (!name.trim()) {
+      this.signupError = 'Full name is required.';
+      return;
+    }
+    if (!email.trim()) {
+      this.signupError = 'Work email is required.';
+      return;
+    }
+    const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRx.test(email.trim())) {
+      this.signupError = 'Please enter a valid email address.';
+      return;
+    }
+    if (!company.trim()) {
+      this.signupError = 'Company / organization is required.';
       return;
     }
     if (!password || password.length < 6) {
@@ -596,26 +639,30 @@ export class LoginComponent implements OnInit {
       return;
     }
     if (password !== confirmPassword) {
-      this.signupError = 'Passwords do not match.';
+      this.signupError = 'Passwords do not match. Please re-enter.';
       return;
     }
 
     this.signupLoading = true;
+    let result: { success: boolean; error?: string };
     try {
-      const result = await this.authService.customerSignup(name.trim(), email.trim(), company.trim(), password);
-      this.signupLoading = false;
-      if (!result.success) {
-        this.signupError = result.error || 'Registration failed. Email may already be in use.';
-        return;
-      }
-      this.signupSuccess = 'Customer account registered successfully! Redirecting to your dashboard...';
-      setTimeout(() => this.router.navigate(['/dashboard/customer']), 1000);
+      result = await this.authService.customerSignup(name.trim(), email.trim(), company.trim(), password);
     } catch {
       this.signupLoading = false;
-      this.signupError = 'Registration failed. Please try again.';
-    } finally {
-      this.signupLoading = false;
+      this.signupError = 'Registration failed. Please check your connection and try again.';
+      return;
     }
+
+    this.signupLoading = false;
+
+    if (!result.success) {
+      this.signupError = result.error || 'Registration failed. This email may already be in use.';
+      return;
+    }
+
+    // Success
+    this.signupSuccess = 'Account created! Redirecting to your dashboard...';
+    setTimeout(() => this.router.navigate(['/dashboard/customer']), 1200);
   }
 
   private async redirectAfterLogin() {
@@ -623,7 +670,9 @@ export class LoginComponent implements OnInit {
     if (role === 'CUSTOMER') {
       await this.router.navigate(['/dashboard/customer']);
     } else {
-      const target = (this.returnUrl && !this.returnUrl.includes('/login') && !this.returnUrl.includes('/unauthorized'))
+      const target = (this.returnUrl
+        && !this.returnUrl.includes('/login')
+        && !this.returnUrl.includes('/unauthorized'))
         ? this.returnUrl
         : '/dashboard/home';
       await this.router.navigateByUrl(target);

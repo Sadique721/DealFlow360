@@ -107,7 +107,7 @@ export class AuthService {
     try {
       const resp = await firstValueFrom(
         this.http.post<LoginResponse>(`${API_BASE}/auth/login`, {
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password
         }).pipe(timeout(8000))
       );
@@ -116,25 +116,34 @@ export class AuthService {
         this.applySession(resp);
         return { success: true };
       }
-      return { success: false, error: 'Invalid response from server.' };
+      return { success: false, error: 'Invalid response from server. Please try again.' };
     } catch (err: any) {
+      // Network unreachable — backend down (status 0 = ECONNREFUSED)
+      if (err?.status === 0) {
+        return { success: false, error: 'Cannot connect to the DealFlow360 server. Please ensure the backend is running on port 8080.' };
+      }
       // Timeout — backend too slow
       if (err?.name === 'TimeoutError') {
-        return { success: false, error: 'Login request timed out. Please check that the backend server is running on port 8080.' };
+        return { success: false, error: 'Login request timed out. The server took too long to respond. Try again in a moment.' };
       }
       // Wrong credentials
       if (err?.status === 401) {
-        return { success: false, error: 'Invalid email or password. Please check your credentials and try again.' };
+        return { success: false, error: 'Incorrect email or password. Please check your credentials and try again.' };
       }
-      // Account disabled
+      // User not found
+      if (err?.status === 404) {
+        return { success: false, error: 'No account found with this email address. Please check or sign up.' };
+      }
+      // Account disabled / forbidden
       if (err?.status === 403) {
-        return { success: false, error: err?.error?.error || 'Your account is deactivated. Please contact the administrator.' };
+        const msg = err?.error?.error || err?.error?.message || '';
+        return { success: false, error: msg || 'Your account has been deactivated. Please contact the administrator.' };
       }
-      // Network error — backend unreachable (status 0 = ECONNREFUSED)
-      if (err?.status === 0 || err?.name === 'HttpErrorResponse') {
-        return { success: false, error: 'Cannot connect to the DealFlow360 server. Please ensure the backend is running on port 8080.' };
+      // Server error
+      if (err?.status >= 500) {
+        return { success: false, error: 'The server encountered an error. Please try again in a moment.' };
       }
-      // Other server errors
+      // Generic fallback
       const msg = err?.error?.error || err?.error?.message || err?.message || 'Authentication failed. Please try again.';
       return { success: false, error: msg };
     }
@@ -147,7 +156,7 @@ export class AuthService {
       const resp = await firstValueFrom(
         this.http.post<LoginResponse>(`${API_BASE}/auth/signup`, {
           name: name.trim(),
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password,
           team: company.trim()
         }).pipe(timeout(8000))
@@ -157,19 +166,27 @@ export class AuthService {
         this.applySession(resp);
         return { success: true };
       }
-      return { success: false, error: 'Registration failed.' };
+      return { success: false, error: 'Registration failed. Please try again.' };
     } catch (err: any) {
-      if (err?.name === 'TimeoutError') {
-        return { success: false, error: 'Registration request timed out. Please check that the backend is running.' };
-      }
+      // Network unreachable
       if (err?.status === 0) {
         return { success: false, error: 'Cannot connect to the server. Please ensure the backend is running on port 8080.' };
       }
-      if (err?.status === 400) {
-        const msg = err.error?.error || 'This email address is already registered.';
-        return { success: false, error: msg };
+      // Timeout
+      if (err?.name === 'TimeoutError') {
+        return { success: false, error: 'Registration request timed out. Please check that the backend is running.' };
       }
-      return { success: false, error: err?.error?.error || 'Signup request failed. Please try again.' };
+      // Email already registered (400 or 409)
+      if (err?.status === 400 || err?.status === 409) {
+        const msg = err?.error?.error || err?.error?.message || '';
+        return { success: false, error: msg || 'This email address is already registered. Please sign in or use a different email.' };
+      }
+      // Server error
+      if (err?.status >= 500) {
+        return { success: false, error: 'Server error during registration. Please try again in a moment.' };
+      }
+      const msg = err?.error?.error || err?.error?.message || 'Signup failed. Please try again.';
+      return { success: false, error: msg };
     }
   }
 
