@@ -1,4 +1,4 @@
-﻿import { Component, OnInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -93,10 +93,10 @@ import { FulfillmentPlan, FulfillmentSplit, Warehouse, Quotation } from '../mode
             <tbody>
               <tr *ngFor="let split of plan.splits">
                 <td>
-                  <strong>{{ split.warehouse?.name || 'Central Facility' }}</strong>
-                  <div class="mono sku">{{ split.warehouse?.code }}</div>
+                  <strong>{{ split.warehouse.name || 'Central Facility' }}</strong>
+                  <div class="mono sku">{{ split.warehouse.code }}</div>
                 </td>
-                <td>{{ split.warehouse?.locationCity }} ({{ split.warehouse?.region }})</td>
+                <td>{{ split.warehouse.locationCity }} ({{ split.warehouse.region }})</td>
                 <td>
                   <strong>{{ split.productName }}</strong>
                 </td>

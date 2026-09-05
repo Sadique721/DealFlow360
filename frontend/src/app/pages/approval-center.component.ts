@@ -1,4 +1,4 @@
-﻿import { Component, OnInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
@@ -97,7 +97,7 @@ import { ApprovalRequest, ApprovalStep, Quotation, RiskCalculationResult } from 
           <!-- Quotation Details Table -->
           <div class="glass-panel items-panel">
             <div class="panel-header">
-              <h4>Complete Order Structure ({{ approval.quotation.lines?.length || 0 }} items)</h4>
+              <h4>Complete Order Structure ({{ approval.quotation.lines.length || 0 }} items)</h4>
               <span class="mono total-badge">Order Value: {{ formatCurrency(approval.quotation.totalAmount) }}</span>
             </div>
 

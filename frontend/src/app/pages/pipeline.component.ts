@@ -1,4 +1,4 @@
-﻿import { Component, OnInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -125,7 +125,7 @@ import { Quotation, DashboardMetrics, DealHealthFlag } from '../models/dealflow.
                 <td>
                   <div class="customer-info">
                     <strong>{{ q.customer.name }}</strong>
-                    <span class="badge badge-neutral tier-tag">{{ q.customer.tier?.tierName }}</span>
+                    <span class="badge badge-neutral tier-tag">{{ q.customer.tier.tierName }}</span>
                   </div>
                 </td>
                 <td>{{ q.salesRep.name }}</td>

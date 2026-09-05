@@ -2,13 +2,20 @@
   <!-- Top Global Navigation Bar -->
   <header class="app-topbar">
     <div class="topbar-left">
+      <!-- Mobile Hamburger Toggle -->
+      <button class="mobile-hamburger" (click)="toggleMobileMenu()" aria-label="Toggle navigation menu">
+        <svg *ngIf="!mobileMenuOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        <svg *ngIf="mobileMenuOpen" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+
       <a routerLink="/pipeline" class="brand-logo">
         <span class="logo-badge">⚡</span>
         <span class="brand-name">DealFlow<span class="highlight">360</span></span>
         <span class="badge badge-purple version-tag">Enterprise Odoo Combat</span>
       </a>
 
-      <nav class="nav-links">
+      <!-- Desktop Nav Links -->
+      <nav class="nav-links desktop-only">
         <a routerLink="/pipeline" routerLinkActive="active" class="nav-item">
           <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"></path></svg>
           Pipeline
@@ -42,7 +49,7 @@
     <!-- Right: Persona Role Switcher for Hackathon Judges -->
     <div class="topbar-right">
       <div class="persona-pill">
-        <span class="persona-label">Persona:</span>
+        <span class="persona-label desktop-only">Persona:</span>
         <button
           class="role-btn"
           [class.active]="currentRole === 'ADMIN'"
@@ -73,12 +80,62 @@
         </button>
       </div>
 
-      <div class="user-avatar">
+      <div class="user-avatar desktop-only">
         <span class="avatar-letter">{{ currentUser.charAt(0) }}</span>
         <span class="user-name">{{ currentUser }}</span>
       </div>
     </div>
   </header>
+
+  <!-- Mobile Off-Canvas Drawer -->
+  <div class="mobile-drawer-backdrop" *ngIf="mobileMenuOpen" (click)="closeMobileMenu()"></div>
+  <aside class="mobile-drawer" [class.open]="mobileMenuOpen">
+    <div class="mobile-drawer-header">
+      <div class="brand-logo">
+        <span class="logo-badge">⚡</span>
+        <span class="brand-name">DealFlow<span class="highlight">360</span></span>
+      </div>
+      <button class="mobile-drawer-close" (click)="closeMobileMenu()">✕</button>
+    </div>
+
+    <div class="mobile-user-profile">
+      <span class="avatar-letter">{{ currentUser.charAt(0) }}</span>
+      <div>
+        <div class="user-name">{{ currentUser }}</div>
+        <div class="badge badge-blue">{{ currentRole }}</div>
+      </div>
+    </div>
+
+    <nav class="mobile-nav-list">
+      <a routerLink="/pipeline" routerLinkActive="active" (click)="closeMobileMenu()" class="mobile-nav-item">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"></path></svg>
+        <span>Sales Pipeline</span>
+      </a>
+      <a routerLink="/quote/1" routerLinkActive="active" (click)="closeMobileMenu()" class="mobile-nav-item">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        <span>Quotation Builder & Cart</span>
+      </a>
+      <a routerLink="/approval/1" routerLinkActive="active" (click)="closeMobileMenu()" class="mobile-nav-item">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span>Approval Review Center</span>
+      </a>
+      <a routerLink="/fulfillment/1" routerLinkActive="active" (click)="closeMobileMenu()" class="mobile-nav-item">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+        <span>Multi-Warehouse Split</span>
+      </a>
+      <a routerLink="/subscription" routerLinkActive="active" (click)="closeMobileMenu()" class="mobile-nav-item">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        <span>Subscription & Proration</span>
+      </a>
+      <a routerLink="/deal-health" routerLinkActive="active" (click)="closeMobileMenu()" class="mobile-nav-item">
+        <span class="live-dot"></span>
+        <span>Deal Health Anomaly Radar</span>
+      </a>
+      <a routerLink="/portal/token-zenith-1042" routerLinkActive="active" (click)="closeMobileMenu()" class="mobile-nav-item portal-nav">
+        <span>Customer Negotiation Portal ↗</span>
+      </a>
+    </nav>
+  </aside>
 
   <!-- Main View Container -->
   <main class="app-main-content">

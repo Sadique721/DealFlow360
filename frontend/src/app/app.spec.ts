@@ -33,4 +33,14 @@ describe('App', () => {
     expect(compiled.querySelector('.brand-name')?.textContent).toContain('DealFlow');
     expect(compiled.querySelector('.brand-name')?.textContent).toContain('360');
   });
+
+  it('should toggle and close mobile off-canvas drawer', () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    expect(app.mobileMenuOpen).toBe(false);
+    app.toggleMobileMenu();
+    expect(app.mobileMenuOpen).toBe(true);
+    app.closeMobileMenu();
+    expect(app.mobileMenuOpen).toBe(false);
+  });
 });

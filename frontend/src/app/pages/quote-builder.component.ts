@@ -1,4 +1,4 @@
-﻿import { Component, OnInit } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
@@ -118,7 +118,7 @@ import { Quotation, QuotationLine, Product, Customer, RiskCalculationResult, Ups
                     </td>
                     <td>
                       <span class="badge badge-neutral">
-                        Max {{ line.product.category?.maxDiscountCeilingPct || 15 }}%
+                        Max {{ line.product.category.maxDiscountCeilingPct || 15 }}%
                       </span>
                     </td>
                     <td>

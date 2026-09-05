@@ -1,4 +1,4 @@
-﻿import { Component } from '@angular/core';
+import { Component } from '@angular/core';
 import { RouterOutlet, RouterModule } from '@angular/router';
 import { CommonModule } from '@angular/common';
 
@@ -12,9 +12,18 @@ import { CommonModule } from '@angular/common';
 export class App {
   currentRole = 'ADMIN';
   currentUser = 'System Admin';
+  mobileMenuOpen = false;
 
   switchRole(role: string, name: string): void {
     this.currentRole = role;
     this.currentUser = name;
+  }
+
+  toggleMobileMenu(): void {
+    this.mobileMenuOpen = !this.mobileMenuOpen;
+  }
+
+  closeMobileMenu(): void {
+    this.mobileMenuOpen = false;
   }
 }
