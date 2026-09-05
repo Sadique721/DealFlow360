@@ -1,0 +1,40 @@
+﻿# Gradle
+.gradle/
+**/.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+
+# Java & IntelliJ
+*.class
+*.log
+*.jar
+*.war
+.idea/
+**/.idea/
+*.iml
+out/
+.settings/
+bin/
+
+# Node & Angular
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.angular/
+**/.angular/
+npm-debug.log*
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# OS
+Thumbs.db
+.DS_Store

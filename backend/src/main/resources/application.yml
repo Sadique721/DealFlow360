@@ -1,0 +1,52 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: dealflow360-backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/dealflow360_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: "0721"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+jwt:
+  secret: "DealFlow360SuperUltraSecretEnterpriseKeyForJwtSigning2026SecureMustBe256BitsLong!"
+  expirationMs: 86400000 # 24 hours
+
+dealflow:
+  risk:
+    manager-threshold: 10.0
+    finance-threshold: 15.0
+    single-line-spike-threshold: 8.0
+  health:
+    stall-threshold-days: 7
+    discount-anomaly-z-score: 2.0
+    anomaly-multiplier: 1.5
+    sla-hours: 2
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    com.dealflow360: INFO
+    org.springframework.security: WARN
