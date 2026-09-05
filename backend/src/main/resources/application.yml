@@ -41,9 +41,9 @@ jwt:
 dealflow:
   # Default admin credentials — seeded automatically on first startup
   admin:
-    name: "Hussain"
-    email: "hvali486@gmail.com"
-    password: "Hussain@6305"
+    name: "Administrator"
+    email: "admin@dealflow360.com"
+    password: "Admin@123"
   risk:
     manager-threshold: 10.0
     finance-threshold: 15.0
