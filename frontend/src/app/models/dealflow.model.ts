@@ -1,8 +1,8 @@
-﻿export interface User {
+export interface User {
   id: number;
   name: string;
   email: string;
-  role: 'ADMIN' | 'SALES_REP' | 'SALES_MANAGER' | 'FINANCE' | 'CUSTOMER';
+  role?: 'ADMIN' | 'SALES_REP' | 'SALES_MANAGER' | 'FINANCE' | 'CUSTOMER' | string;
   team?: string;
   active?: boolean;
 }
@@ -10,20 +10,24 @@
 export interface CustomerTier {
   id: number;
   tierName: string;
-  code: string;
+  code?: string;
   minAnnualSpend?: number;
-  maxDiscountFloorPct: number;
-  freightDiscountPct: number;
+  maxDiscountFloorPct?: number;
+  freightDiscountPct?: number;
+  defaultDiscountPct?: number;
+  maxAllowedDiscountPct?: number;
 }
 
 export interface Customer {
   id: number;
   name: string;
+  code?: string;
   companyName?: string;
-  email: string;
+  email?: string;
+  contactEmail?: string;
   phone?: string;
   shippingAddress?: string;
-  destinationRegion: string;
+  destinationRegion?: string;
   tier: CustomerTier;
 }
 
@@ -39,10 +43,10 @@ export interface Product {
   id: number;
   name: string;
   sku: string;
-  type: 'HARDWARE' | 'SOFTWARE_SUBSCRIPTION' | 'SERVICE';
+  type: 'HARDWARE' | 'SOFTWARE_SUBSCRIPTION' | 'SERVICE' | 'SUBSCRIPTION' | string;
   basePrice: number;
   unitCost: number;
-  weightKg: number;
+  weightKg?: number;
   category: Category;
   billingFrequency?: string;
   prorationUnit?: string;
@@ -68,19 +72,19 @@ export interface Quotation {
   quoteNumber: string;
   customer: Customer;
   salesRep: User;
-  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SENT_TO_CUSTOMER' | 'UNDER_NEGOTIATION' | 'CONFIRMED' | 'FULFILLED' | 'REJECTED';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'SENT_TO_CUSTOMER' | 'UNDER_NEGOTIATION' | 'CONFIRMED' | 'ACCEPTED' | 'FULFILLED' | 'REJECTED' | string;
   subtotalAmount: number;
   totalDiscountAmount: number;
   blendedDiscountPct: number;
-  shippingAmount: number;
-  taxAmount: number;
+  shippingAmount?: number;
+  taxAmount?: number;
   totalAmount: number;
-  totalCostAmount: number;
+  totalCostAmount?: number;
   marginPct: number;
   riskScore: number;
-  riskSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  requiresManagerApproval: boolean;
-  requiresFinanceApproval: boolean;
+  riskSeverity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
+  requiresManagerApproval?: boolean;
+  requiresFinanceApproval?: boolean;
   promisedDeliveryDate?: string;
   portalAccessToken?: string;
   lines: QuotationLine[];
@@ -130,6 +134,7 @@ export interface ApprovalRequest {
   maxLevel: string;
   culpritLineBreakdownJson?: string;
   steps: ApprovalStep[];
+  requiredTier?: string;
 }
 
 export interface Warehouse {
@@ -168,10 +173,10 @@ export interface FulfillmentPlan {
 export interface DealHealthFlag {
   id: number;
   quotation: Quotation;
-  flagType: 'STALLED' | 'DISCOUNT_ANOMALY' | 'DELIVERY_SLIPPAGE' | 'SLA_BREACH';
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  flagType: 'STALLED' | 'DISCOUNT_ANOMALY' | 'DELIVERY_SLIPPAGE' | 'SLA_BREACH' | 'STATISTICAL_DISCOUNT_OUTLIER' | 'STAGE_RESIDENCE_STALL' | 'MARGIN_DECAY_ANOMALY' | string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | string;
   description: string;
-  resolved: boolean;
+  resolved?: boolean;
   actionTaken?: string;
   detectedAt: string;
 }
@@ -187,10 +192,35 @@ export interface DashboardMetrics {
 }
 
 export interface UpsellSuggestion {
-  ruleId: number;
-  suggestedProduct: Product;
-  benefitDescription: string;
-  discountPct: number;
-  projectedRevenueIncrease: number;
-  marginImpactPct: number;
+  id?: number;
+  ruleId?: number;
+  ruleName?: string;
+  recommendedProduct?: Product;
+  suggestedProduct?: Product;
+  benefitDescription?: string;
+  discountOverridePct?: number;
+  discountPct?: number;
+  revenueImpact?: number;
+  projectedRevenueIncrease?: number;
+  marginImpactPct?: number;
+  explanation?: string;
 }
+
+export interface SubscriptionContract {
+  id: number;
+  contractNumber: string;
+  customerName: string;
+  customerTier: string;
+  planName: string;
+  billingFrequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+  seatsCount: number;
+  unitSeatPrice: number;
+  monthlyRecurringRevenue: number;
+  annualContractValue: number;
+  startDate: string;
+  nextRenewalDate: string;
+  status: 'ACTIVE' | 'PENDING_PRORATION' | 'RENEWING' | 'IN_GRACE' | 'CANCELLED';
+  prorationAmountAvailable: number;
+  creditNoteId?: string;
+}
+
