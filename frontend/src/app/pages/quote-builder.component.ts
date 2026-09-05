@@ -6,12 +6,6 @@ import { QuotationService } from '../services/quotation.service';
 import { CatalogService } from '../services/catalog.service';
 import { AuthService } from '../services/auth.service';
 import {
-  generate120Quotations,
-  generate120Products,
-  generateMockCustomers,
-  generateMockPriceLists
-} from '../services/mock-data';
-import {
   Quotation,
   QuotationLine,
   Product,
@@ -21,7 +15,7 @@ import {
   UpsellSuggestion
 } from '../models/dealflow.model';
 import { Subscription, forkJoin, of } from 'rxjs';
-import { catchError, timeout } from 'rxjs/operators';
+import { catchError } from 'rxjs/operators';
 
 @Component({
   selector: 'app-quote-builder',
@@ -101,15 +95,28 @@ import { catchError, timeout } from 'rxjs/operators';
               {{ isSaving ? 'Saving...' : (isCreateMode ? '💾 Save & Create Quotation' : '💾 Save Draft') }}
             </button>
 
-            <!-- Submit for Approval Button -->
+            <!-- Submit / Resubmit for Approval Button -->
             <button
               *ngIf="!isCreateMode && quote && (quote.status === 'DRAFT' || quote.status === 'UNDER_NEGOTIATION' || quote.status === 'RETURNED') && currentRole !== 'CUSTOMER'"
               class="btn btn-primary btn-sm"
               (click)="submitForApproval()"
               [disabled]="isSubmitting || lines.length === 0"
             >
-              {{ isSubmitting ? 'Submitting...' : 'Submit for Approval 🚀' }}
+              {{ isSubmitting ? 'Submitting...' : (quote.status === 'RETURNED' ? 'Resubmit for Approval 🚀' : 'Submit for Approval 🚀') }}
             </button>
+
+            <!-- Approval Review Action Buttons for Sales Manager / Finance / Admin -->
+            <ng-container *ngIf="!isCreateMode && quote && quote.status === 'PENDING_APPROVAL' && (currentRole === 'SALES_MANAGER' || currentRole === 'FINANCE' || currentRole === 'ADMIN')">
+              <button class="btn btn-success btn-sm" (click)="openApprovalDialog('APPROVE')">
+                Approve Deal ✓
+              </button>
+              <button class="btn btn-warning btn-sm" (click)="openApprovalDialog('RETURN')">
+                Return for Revision ↩
+              </button>
+              <button class="btn btn-danger btn-sm" (click)="openApprovalDialog('REJECT')">
+                Reject ✕
+              </button>
+            </ng-container>
 
             <!-- Convert to Sales Order Button -->
             <button
@@ -555,9 +562,89 @@ import { catchError, timeout } from 'rxjs/operators';
           </div>
         </div>
       </ng-container>
+
+      <!-- Approval Decision Modal -->
+      <div class="modal-backdrop" *ngIf="showApprovalModal">
+        <div class="glass-panel modal-card">
+          <div class="modal-header">
+            <h3>{{ pendingApprovalAction === 'APPROVE' ? 'Approve Deal' : (pendingApprovalAction === 'RETURN' ? 'Return Quotation for Revision' : 'Reject Quotation') }}</h3>
+            <button class="btn-close" (click)="closeApprovalDialog()">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted font-sm mb-3">
+              Quotation: <strong>{{ quote?.quoteNumber }}</strong> | Customer: <strong>{{ quote?.customer?.name }}</strong> | Blended Risk: <strong>{{ quote?.blendedRiskScore }}</strong>
+            </p>
+            <div class="form-group">
+              <label class="form-label">Review Justification & Notes *</label>
+              <textarea class="form-control" [(ngModel)]="approvalComments" rows="3" placeholder="Enter mandatory decision comments or revision requests..."></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline btn-sm" (click)="closeApprovalDialog()">Cancel</button>
+            <button
+              class="btn btn-sm"
+              [class.btn-success]="pendingApprovalAction === 'APPROVE'"
+              [class.btn-warning]="pendingApprovalAction === 'RETURN'"
+              [class.btn-danger]="pendingApprovalAction === 'REJECT'"
+              [disabled]="isActingOnApproval || !approvalComments.trim()"
+              (click)="executeApprovalAction()"
+            >
+              {{ isActingOnApproval ? 'Submitting...' : 'Confirm Decision' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
+    /* Modal Dialog */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modal-card {
+      width: 90%;
+      max-width: 520px;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .modal-header h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0;
+    }
+    .btn-close {
+      background: transparent;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: #94a3b8;
+    }
+    .modal-body {
+      margin-bottom: 20px;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
     .builder-container {
       padding: 24px;
       max-width: 1400px;
@@ -1250,28 +1337,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
   }
 
   loadCatalogMasterData(): void {
-    // Immediately initialize with high-performance mock catalog data so dropdowns are instantaneous
-    if (this.availableCustomers.length === 0) {
-      this.availableCustomers = generateMockCustomers();
-    }
-    if (this.availablePriceLists.length === 0) {
-      this.availablePriceLists = generateMockPriceLists();
-    }
-    if (this.availableProducts.length === 0) {
-      this.availableProducts = generate120Products();
-    }
-
-    if (this.isCreateMode) {
-      if (this.availableCustomers.length > 0 && !this.selectedCustomerId) {
-        this.selectedCustomerId = this.availableCustomers[0].id;
-        this.onCustomerSelected();
-      }
-      if (this.availablePriceLists.length > 0 && !this.selectedPriceListId) {
-        this.selectedPriceListId = this.availablePriceLists[0].id;
-      }
-    }
-
-    // Background sync from backend catalog API
+    // Fetch live catalog, pricing rules, and products directly from backend
     forkJoin({
       customers: this.catalogService.getCustomers().pipe(catchError(() => of([]))),
       priceLists: this.catalogService.getPriceLists().pipe(catchError(() => of([]))),
@@ -1314,47 +1380,30 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     this.recalculateTotals();
   }
 
-  private fallbackToMockQuote(id: number): boolean {
-    const mockQuotes = generate120Quotations();
-    const found = mockQuotes.find(mq => mq.id === id);
-    if (found) {
-      this.applyQuoteData(found);
-      this.isLoading = false;
-      this.errorMessage = null;
-      return true;
-    }
-    return false;
-  }
-
   loadQuote(id: number): void {
-    if (this.quote && this.quote.id === id && !this.isCreateMode) {
-      this.isLoading = false;
-      return;
-    }
-
-    // Immediately fallback from mock if available so UI renders at once
-    const hasMock = this.fallbackToMockQuote(id);
-    if (!hasMock) {
-      this.isLoading = true;
-    }
+    this.isLoading = true;
     this.errorMessage = null;
 
-    // Attempt backend fetch with 4s timeout - replace mock data with real data if available
-    this.quoteService.getQuotationById(id).pipe(
-      timeout(4000),
-      catchError((err) => {
-        // Timeout or network error - mock already applied, just return null
-        return of(null);
-      })
-    ).subscribe((q) => {
-      if (!q) {
-        // Backend unavailable - mock was already applied above, ensure loading cleared
+    this.quoteService.getQuotationById(id).subscribe({
+      next: (q) => {
         this.isLoading = false;
-        return;
+        if (!q) {
+          this.errorMessage = `Quotation #${id} returned empty data from server.`;
+          return;
+        }
+        this.applyQuoteData(q);
+        this.loadUpsells(id);
+      },
+      error: (err) => {
+        this.isLoading = false;
+        if (err.status === 404) {
+          this.errorMessage = `Quotation #${id} was not found in database.`;
+        } else if (err.status === 403) {
+          this.errorMessage = `Access Denied: You do not have permission to view Quotation #${id}.`;
+        } else {
+          this.errorMessage = err.error?.message || err.message || `Failed to load quotation #${id} from backend.`;
+        }
       }
-      // Backend returned real data - override mock with authoritative data
-      this.applyQuoteData(q);
-      this.loadUpsells(id);
     });
   }
 
@@ -1530,6 +1579,16 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     const prod = this.availableProducts.find(p => p.id === this.selectedProductId);
     if (!prod) return;
 
+    // Consolidate duplicate product entry (Requirement 15)
+    const existingLine = this.lines.find(l => l.product?.id === prod.id);
+    if (existingLine) {
+      existingLine.quantity = (existingLine.quantity || 1) + 1;
+      this.recomputeLine(existingLine);
+      this.selectedProductId = null;
+      this.showAlert(`Consolidated duplicate line: updated ${prod.name} quantity to ${existingLine.quantity}`, 'info');
+      return;
+    }
+
     const listPrice = prod.basePrice || 0;
     const costPrice = prod.costPrice ?? prod.unitCost ?? 0;
     const initialMargin = listPrice > 0 ? ((listPrice - costPrice) / listPrice) * 100 : 0;
@@ -1600,7 +1659,6 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
       }
 
       this.isSaving = true;
-      const customer = this.availableCustomers.find(c => c.id === this.selectedCustomerId);
       const payload = {
         customerId: this.selectedCustomerId,
         promisedDeliveryDate: this.targetDeliveryDate,
@@ -1615,39 +1673,12 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
         next: (created) => {
           this.isSaving = false;
           this.applyQuoteData(created);
-          this.showAlert(`Quotation ${created.quoteNumber || ('#' + created.id)} created successfully in database!`, 'success');
-          // Navigate to the saved quotation detail/edit route smoothly without full screen loader
+          this.showAlert(`Quotation ${created.quoteNumber || ('#' + created.id)} created successfully and saved in database!`, 'success');
           this.router.navigate(['/dashboard/quote', created.id], { replaceUrl: true });
         },
         error: (err) => {
           this.isSaving = false;
-          // Graceful fallback for offline or demo testing
-          const newId = Math.floor(Date.now() / 1000);
-          const localQuote: Quotation = {
-            id: newId,
-            quoteNumber: `Q-${new Date().getFullYear()}-${String(newId % 10000).padStart(4, '0')}`,
-            customer: customer || { id: this.selectedCustomerId || 1, name: 'Enterprise Customer', code: 'CUST-AUTO', tier: 'Enterprise Diamond' },
-            salesRep: { id: 1, name: this.currentUserName, email: 'sales@dealflow360.com' },
-            status: 'DRAFT',
-            subtotalAmount: this.currentSubtotal,
-            totalDiscountAmount: this.currentDiscountAmount,
-            blendedDiscountPct: this.currentDiscountPct,
-            shippingAmount: 500,
-            taxAmount: this.currentTaxAmount,
-            totalAmount: this.currentTotalAmount,
-            totalCostAmount: this.currentTotalCost,
-            marginPct: this.currentMargin,
-            riskScore: this.currentRiskScore,
-            riskSeverity: this.currentRiskSeverity,
-            requiresManagerApproval: this.requiresManagerApproval,
-            requiresFinanceApproval: this.requiresFinanceApproval,
-            promisedDeliveryDate: this.targetDeliveryDate,
-            createdAt: new Date().toISOString(),
-            lines: [...this.lines]
-          };
-          this.applyQuoteData(localQuote);
-          this.showAlert(`Quotation ${localQuote.quoteNumber} created and saved in active session!`, 'success');
-          this.router.navigate(['/dashboard/quote', localQuote.id], { replaceUrl: true });
+          this.showAlert(`Failed to save draft quotation: ${err.error?.message || err.message || 'Server error'}`, 'error');
         }
       });
     } else {
@@ -1669,12 +1700,11 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
         next: (updated) => {
           this.isSaving = false;
           this.applyQuoteData(updated);
-          this.showAlert(`Quotation ${updated.quoteNumber || ('#' + updated.id)} updated with authoritative backend recalculation!`, 'success');
+          this.showAlert(`Quotation ${updated.quoteNumber || ('#' + updated.id)} updated and recalculated in database!`, 'success');
         },
         error: (err) => {
           this.isSaving = false;
-          this.recalculateTotals();
-          this.showAlert(`Quotation updated and recalculated successfully!`, 'success');
+          this.showAlert(`Failed to update quotation draft: ${err.error?.message || err.message || 'Server error'}`, 'error');
         }
       });
     }
@@ -1767,31 +1797,82 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     }
   }
 
+  showApprovalModal = false;
+  pendingApprovalAction: 'APPROVE' | 'REJECT' | 'RETURN' | null = null;
+  approvalComments = '';
+  isActingOnApproval = false;
+
+  openApprovalDialog(action: 'APPROVE' | 'REJECT' | 'RETURN'): void {
+    this.pendingApprovalAction = action;
+    this.approvalComments = '';
+    this.showApprovalModal = true;
+  }
+
+  closeApprovalDialog(): void {
+    this.showApprovalModal = false;
+    this.pendingApprovalAction = null;
+    this.approvalComments = '';
+  }
+
+  executeApprovalAction(): void {
+    if (!this.quote || !this.pendingApprovalAction) return;
+    if (!this.approvalComments.trim()) {
+      this.showAlert('Decision justification comments are required.', 'error');
+      return;
+    }
+    this.isActingOnApproval = true;
+    this.quoteService.actOnApproval(this.quote.id, this.pendingApprovalAction, this.approvalComments.trim()).subscribe({
+      next: (res) => {
+        this.isActingOnApproval = false;
+        this.showApprovalModal = false;
+        this.showAlert(`Quotation successfully ${this.pendingApprovalAction?.toLowerCase()}d!`, 'success');
+        if (this.quoteId) {
+          this.loadQuote(this.quoteId);
+        }
+      },
+      error: (err) => {
+        this.isActingOnApproval = false;
+        this.showAlert(`Approval action failed: ${err.error?.message || err.message || 'Server error'}`, 'error');
+      }
+    });
+  }
+
   acceptUpsell(u: UpsellSuggestion): void {
     const prod = u.recommendedProduct || u.suggestedProduct;
     if (!prod) return;
 
     const listPrice = prod.basePrice || 0;
     const costPrice = prod.costPrice ?? prod.unitCost ?? 0;
-    const disc = u.discountOverridePct || 5;
-    const net = listPrice * (1 - (disc / 100));
+    const disc = u.promoDiscountPercent || u.discountOverridePct || 5;
 
-    this.lines.push({
-      product: prod,
-      quantity: 1,
-      unitListPrice: listPrice,
-      unitDiscountPct: disc,
-      unitDiscountAmount: listPrice * (disc / 100),
-      unitFinalPrice: net,
-      lineTotal: net,
-      lineCost: costPrice,
-      lineMarginPct: net > 0 ? Number((((net - costPrice) / net) * 100).toFixed(1)) : 50.0
-    });
+    // Check if line with same product already exists (Consolidate duplicates - Requirement 15)
+    const existingLine = this.lines.find(l => l.product?.id === prod.id);
+    if (existingLine) {
+      existingLine.quantity = (existingLine.quantity || 1) + 1;
+      if (disc > (existingLine.unitDiscountPct || 0)) {
+        existingLine.unitDiscountPct = disc;
+      }
+      this.recomputeLine(existingLine);
+      this.showAlert(`Added bundle unit: ${prod.name} quantity is now ${existingLine.quantity}!`, 'success');
+    } else {
+      const net = listPrice * (1 - (disc / 100));
+      this.lines.push({
+        product: prod,
+        quantity: 1,
+        unitListPrice: listPrice,
+        unitDiscountPct: disc,
+        unitDiscountAmount: listPrice * (disc / 100),
+        unitFinalPrice: net,
+        lineTotal: net,
+        lineCost: costPrice,
+        lineMarginPct: net > 0 ? Number((((net - costPrice) / net) * 100).toFixed(1)) : 50.0
+      });
+      this.showAlert(`Added ${prod.name} with ${disc}% promotional bundle discount!`, 'success');
+    }
 
     const idx = this.upsells.indexOf(u);
     if (idx >= 0) this.upsells.splice(idx, 1);
     this.recalculateTotals();
-    this.showAlert(`Added ${prod.name} with ${disc}% promotional bundle discount!`, 'success');
   }
 
   isOverage(line: QuotationLine): boolean {

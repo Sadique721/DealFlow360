@@ -58,10 +58,18 @@ export class QuotationService {
   }
 
   getUpsellSuggestions(id: number): Observable<UpsellSuggestion[]> {
-    return this.api.get<UpsellSuggestion[]>(`upsells/quotation/${id}`);
+    return this.api.get<UpsellSuggestion[]>(`quotations/${id}/upsell-suggestions`);
   }
 
   applyUpsell(id: number, ruleId: number): Observable<any> {
     return this.api.post<any>(`upsells/apply?quotationId=${id}&ruleId=${ruleId}`, {});
+  }
+
+  actOnApproval(id: number, action: 'APPROVE' | 'REJECT' | 'RETURN', comments: string): Observable<any> {
+    return this.api.post<any>(`quotations/${id}/approval/act`, {
+      quotationId: id,
+      action,
+      comments
+    });
   }
 }

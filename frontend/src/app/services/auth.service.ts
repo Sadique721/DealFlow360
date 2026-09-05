@@ -288,25 +288,36 @@ export class AuthService {
   }
 
   filterQuotationsByRole(quotes: any[]): any[] {
+    if (!quotes || !Array.isArray(quotes)) return [];
     const role = this.currentRole;
     const user = this.currentUser;
     if (role === 'ADMIN' || role === 'SALES_MANAGER') return quotes;
+
     if (role === 'SALES_REP') {
       return quotes.filter((q: any) =>
-        q.salesRep?.name?.toLowerCase().includes(user.name.toLowerCase().split(' ')[0]) ||
-        q.salesRep?.email === user.email
+        !q.salesRep ||
+        q.salesRep?.id === user.id ||
+        (q.salesRep?.email && user.email && q.salesRep.email.toLowerCase() === user.email.toLowerCase()) ||
+        (user.name && q.salesRep?.name && q.salesRep.name.toLowerCase().includes(user.name.toLowerCase().split(' ')[0]))
       );
     }
+
     if (role === 'FINANCE') {
       return quotes.filter((q: any) =>
-        q.requiresFinanceApproval || q.blendedDiscountPct > 12 ||
-        q.status === 'PENDING_APPROVAL' || q.status === 'APPROVED' || q.status === 'ACCEPTED'
+        q.requiresFinanceApproval || (q.blendedDiscountPct && q.blendedDiscountPct > 12) ||
+        q.status === 'PENDING_APPROVAL' || q.status === 'APPROVED' || q.status === 'CONFIRMED' || q.status === 'ACCEPTED'
       );
     }
+
     if (role === 'CUSTOMER') {
-      return quotes.filter((q: any) => q.customer?.name?.toLowerCase().includes('acme') ||
-        q.customer?.email === user.email);
+      return quotes.filter((q: any) =>
+        !q.customer ||
+        q.customer?.portalUserId === user.id ||
+        (q.customer?.email && user.email && q.customer.email.toLowerCase() === user.email.toLowerCase()) ||
+        (user.name && q.customer?.name && q.customer.name.toLowerCase().includes(user.name.toLowerCase()))
+      );
     }
+
     return quotes;
   }
 }

@@ -29,13 +29,16 @@ public class QuotationController {
     private final QuotationService quotationService;
     private final ApprovalService approvalService;
     private final com.dealflow360.warehouse.FulfillmentService fulfillmentService;
+    private final com.dealflow360.upsell.UpsellService upsellService;
 
     public QuotationController(QuotationService quotationService,
                                ApprovalService approvalService,
-                               com.dealflow360.warehouse.FulfillmentService fulfillmentService) {
+                               com.dealflow360.warehouse.FulfillmentService fulfillmentService,
+                               com.dealflow360.upsell.UpsellService upsellService) {
         this.quotationService = quotationService;
         this.approvalService = approvalService;
         this.fulfillmentService = fulfillmentService;
+        this.upsellService = upsellService;
     }
 
     @GetMapping
@@ -152,5 +155,11 @@ public class QuotationController {
     @Operation(summary = "Get quotation version history snapshots for negotiation diff comparison")
     public ResponseEntity<List<QuotationVersion>> getVersions(@PathVariable Long id) {
         return ResponseEntity.ok(quotationService.getQuotationVersions(id));
+    }
+
+    @GetMapping("/{id}/upsell-suggestions")
+    @Operation(summary = "Get live upsell & cross-sell suggestions for a quotation")
+    public ResponseEntity<List<com.dealflow360.upsell.dto.UpsellSuggestion>> getUpsellSuggestions(@PathVariable Long id) {
+        return ResponseEntity.ok(upsellService.getSuggestionsForQuotation(id));
     }
 }

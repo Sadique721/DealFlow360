@@ -12,11 +12,17 @@ import java.util.Optional;
 public interface QuotationRepository extends JpaRepository<Quotation, Long> {
     Optional<Quotation> findByQuoteNumber(String quoteNumber);
     Optional<Quotation> findByPortalToken(String portalToken);
+    List<Quotation> findAllByOrderByCreatedAtDesc();
     List<Quotation> findBySalesRepId(Long salesRepId);
+    List<Quotation> findBySalesRepIdOrderByCreatedAtDesc(Long salesRepId);
     List<Quotation> findByCustomerId(Long customerId);
+    List<Quotation> findByCustomerIdOrderByCreatedAtDesc(Long customerId);
     List<Quotation> findByStatus(String status);
+    List<Quotation> findByStatusOrderByCreatedAtDesc(String status);
     List<Quotation> findBySalesRepIdAndStatus(Long salesRepId, String status);
+    List<Quotation> findBySalesRepIdAndStatusOrderByCreatedAtDesc(Long salesRepId, String status);
     List<Quotation> findByCustomerIdAndStatus(Long customerId, String status);
+    List<Quotation> findByCustomerIdAndStatusOrderByCreatedAtDesc(Long customerId, String status);
 
     @Query("SELECT q FROM Quotation q WHERE q.status NOT IN ('CONFIRMED', 'REJECTED', 'CLOSED') AND q.lastActivityAt < :threshold")
     List<Quotation> findStalledQuotations(LocalDateTime threshold);

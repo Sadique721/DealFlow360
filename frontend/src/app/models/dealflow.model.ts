@@ -410,6 +410,12 @@ export interface UpsellSuggestion {
   recommendedProduct?: Product;
   suggestedProduct?: Product;
   benefitDescription?: string;
+  promoDiscountPercent?: number;
+  promoTag?: string;
+  coPurchaseScore?: number;
+  marginDelta?: number;
+  simulatedNewMarginPercentage?: number;
+  rationale?: string;
   discountOverridePct?: number;
   discountPct?: number;
   revenueImpact?: number;

@@ -33,8 +33,12 @@ export const routes: Routes = [
   { path: 'pipeline', redirectTo: 'dashboard/pipeline', pathMatch: 'full' },
   { path: 'quotes', redirectTo: 'dashboard/pipeline', pathMatch: 'full' },
   { path: 'quotations', redirectTo: 'dashboard/pipeline', pathMatch: 'full' },
+  { path: 'quotations/new', redirectTo: 'dashboard/quote/new', pathMatch: 'full' },
+  { path: 'quotations/:id', redirectTo: 'dashboard/quote/:id' },
+  { path: 'quotations/:id/edit', redirectTo: 'dashboard/quote/:id/edit' },
   { path: 'quote/new', redirectTo: 'dashboard/quote/new', pathMatch: 'full' },
   { path: 'quote/:id', redirectTo: 'dashboard/quote/:id' },
+  { path: 'quote/:id/edit', redirectTo: 'dashboard/quote/:id/edit' },
   { path: 'approval', redirectTo: 'dashboard/approval', pathMatch: 'full' },
   { path: 'approval/:id', redirectTo: 'dashboard/approval/:id' },
   { path: 'fulfillment', redirectTo: 'dashboard/fulfillment', pathMatch: 'full' },
@@ -74,6 +78,9 @@ export const routes: Routes = [
       },
       { path: 'quotes', redirectTo: 'pipeline', pathMatch: 'full' },
       { path: 'quotations', redirectTo: 'pipeline', pathMatch: 'full' },
+      { path: 'quotations/new', redirectTo: 'quote/new', pathMatch: 'full' },
+      { path: 'quotations/:id', redirectTo: 'quote/:id' },
+      { path: 'quotations/:id/edit', redirectTo: 'quote/:id/edit' },
       {
         path: 'quote/new',
         component: QuoteBuilderComponent,
@@ -85,6 +92,12 @@ export const routes: Routes = [
         component: QuoteBuilderComponent,
         canActivate: [roleGuard],
         data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE', 'CUSTOMER'], module: 'quotations' }
+      },
+      {
+        path: 'quote/:id/edit',
+        component: QuoteBuilderComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER'], module: 'quotations' }
       },
       {
         path: 'approval',

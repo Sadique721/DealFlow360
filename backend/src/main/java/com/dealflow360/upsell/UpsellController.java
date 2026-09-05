@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/upsell")
+@RequestMapping({"/api/upsell", "/api/upsells"})
 @Tag(name = "Upsell & Cross-Sell Engine", description = "Endpoints for co-purchase affinity suggestions with live margin impact and promotion boosts")
 public class UpsellController {
 
@@ -19,7 +19,7 @@ public class UpsellController {
         this.upsellService = upsellService;
     }
 
-    @GetMapping("/suggestions/{quotationId}")
+    @GetMapping({"/suggestions/{quotationId}", "/quotation/{quotationId}"})
     @Operation(summary = "Get ranked upsell and cross-sell suggestions for a quotation")
     public ResponseEntity<List<UpsellSuggestion>> getSuggestions(@PathVariable Long quotationId) {
         return ResponseEntity.ok(upsellService.getSuggestionsForQuotation(quotationId));

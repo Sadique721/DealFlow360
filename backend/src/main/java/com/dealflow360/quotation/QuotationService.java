@@ -14,6 +14,7 @@ import com.dealflow360.catalog.CustomerTier;
 import com.dealflow360.catalog.CustomerTierRepository;
 import com.dealflow360.catalog.Product;
 import com.dealflow360.catalog.ProductRepository;
+import com.dealflow360.discount.DiscountEvaluationService;
 import com.dealflow360.discount.LineOverageDetail;
 import com.dealflow360.discount.RiskCalculationResult;
 import com.dealflow360.discount.RiskScoreEngine;
@@ -23,6 +24,7 @@ import com.dealflow360.quotation.dto.QuotationCalculateResponse;
 import com.dealflow360.quotation.dto.QuotationCreateRequest;
 import com.dealflow360.websocket.WebSocketPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,11 +46,41 @@ public class QuotationService {
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final RiskScoreEngine riskScoreEngine;
+    private final DiscountEvaluationService discountEvaluationService;
     private final ApprovalRequestRepository approvalRequestRepository;
     private final ApprovalStepRepository approvalStepRepository;
     private final AuditService auditService;
     private final WebSocketPublisher webSocketPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Autowired
+    public QuotationService(QuotationRepository quotationRepository,
+                            QuotationLineRepository quotationLineRepository,
+                            QuotationVersionRepository quotationVersionRepository,
+                            CustomerRepository customerRepository,
+                            CustomerTierRepository customerTierRepository,
+                            UserRepository userRepository,
+                            ProductRepository productRepository,
+                            RiskScoreEngine riskScoreEngine,
+                            DiscountEvaluationService discountEvaluationService,
+                            ApprovalRequestRepository approvalRequestRepository,
+                            ApprovalStepRepository approvalStepRepository,
+                            AuditService auditService,
+                            WebSocketPublisher webSocketPublisher) {
+        this.quotationRepository = quotationRepository;
+        this.quotationLineRepository = quotationLineRepository;
+        this.quotationVersionRepository = quotationVersionRepository;
+        this.customerRepository = customerRepository;
+        this.customerTierRepository = customerTierRepository;
+        this.userRepository = userRepository;
+        this.productRepository = productRepository;
+        this.riskScoreEngine = riskScoreEngine;
+        this.discountEvaluationService = discountEvaluationService != null ? discountEvaluationService : new DiscountEvaluationService(riskScoreEngine);
+        this.approvalRequestRepository = approvalRequestRepository;
+        this.approvalStepRepository = approvalStepRepository;
+        this.auditService = auditService;
+        this.webSocketPublisher = webSocketPublisher;
+    }
 
     public QuotationService(QuotationRepository quotationRepository,
                             QuotationLineRepository quotationLineRepository,
@@ -62,18 +94,10 @@ public class QuotationService {
                             ApprovalStepRepository approvalStepRepository,
                             AuditService auditService,
                             WebSocketPublisher webSocketPublisher) {
-        this.quotationRepository = quotationRepository;
-        this.quotationLineRepository = quotationLineRepository;
-        this.quotationVersionRepository = quotationVersionRepository;
-        this.customerRepository = customerRepository;
-        this.customerTierRepository = customerTierRepository;
-        this.userRepository = userRepository;
-        this.productRepository = productRepository;
-        this.riskScoreEngine = riskScoreEngine;
-        this.approvalRequestRepository = approvalRequestRepository;
-        this.approvalStepRepository = approvalStepRepository;
-        this.auditService = auditService;
-        this.webSocketPublisher = webSocketPublisher;
+        this(quotationRepository, quotationLineRepository, quotationVersionRepository,
+                customerRepository, customerTierRepository, userRepository,
+                productRepository, riskScoreEngine, new DiscountEvaluationService(riskScoreEngine),
+                approvalRequestRepository, approvalStepRepository, auditService, webSocketPublisher);
     }
 
     public List<Quotation> listQuotations(Long repId, String status, AuthUser authUser) {
@@ -82,9 +106,9 @@ public class QuotationService {
 
         if ("SALES_REP".equals(role) && currentUserId != null) {
             if (status != null && !status.isBlank()) {
-                return quotationRepository.findBySalesRepIdAndStatus(currentUserId, status);
+                return quotationRepository.findBySalesRepIdAndStatusOrderByCreatedAtDesc(currentUserId, status);
             }
-            return quotationRepository.findBySalesRepId(currentUserId);
+            return quotationRepository.findBySalesRepIdOrderByCreatedAtDesc(currentUserId);
         }
 
         if ("CUSTOMER".equals(role) && currentUserId != null) {
@@ -95,22 +119,22 @@ public class QuotationService {
             if (custOpt.isPresent()) {
                 Long custId = custOpt.get().getId();
                 if (status != null && !status.isBlank()) {
-                    return quotationRepository.findByCustomerIdAndStatus(custId, status);
+                    return quotationRepository.findByCustomerIdAndStatusOrderByCreatedAtDesc(custId, status);
                 }
-                return quotationRepository.findByCustomerId(custId);
+                return quotationRepository.findByCustomerIdOrderByCreatedAtDesc(custId);
             }
             return List.of();
         }
 
         // ADMIN, SALES_MANAGER, FINANCE can view all (or scoped by repId/status)
         if (repId != null && status != null && !status.isBlank()) {
-            return quotationRepository.findBySalesRepIdAndStatus(repId, status);
+            return quotationRepository.findBySalesRepIdAndStatusOrderByCreatedAtDesc(repId, status);
         } else if (repId != null) {
-            return quotationRepository.findBySalesRepId(repId);
+            return quotationRepository.findBySalesRepIdOrderByCreatedAtDesc(repId);
         } else if (status != null && !status.isBlank()) {
-            return quotationRepository.findByStatus(status);
+            return quotationRepository.findByStatusOrderByCreatedAtDesc(status);
         }
-        return quotationRepository.findAll();
+        return quotationRepository.findAllByOrderByCreatedAtDesc();
     }
 
     public Quotation getQuotationById(Long id) {
@@ -245,7 +269,7 @@ public class QuotationService {
                 ? totalMarginAmount.divide(totalAmount, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
-        RiskCalculationResult riskResult = riskScoreEngine.calculateRisk(customerTierCeiling, riskInputs);
+        RiskCalculationResult riskResult = discountEvaluationService.evaluate(customerTierCeiling, riskInputs);
 
         if (riskResult.getLineDetails() != null && riskResult.getLineDetails().size() == calcLines.size()) {
             for (int i = 0; i < calcLines.size(); i++) {
@@ -273,6 +297,16 @@ public class QuotationService {
     }
 
     public Quotation createQuotation(QuotationCreateRequest request, String repEmail) {
+        if (request == null) {
+            throw new IllegalArgumentException("Quotation request cannot be null");
+        }
+        if (request.getCustomerId() == null) {
+            throw new IllegalArgumentException("Customer is required to create a quotation");
+        }
+        if (request.getLines() == null || request.getLines().isEmpty()) {
+            throw new IllegalArgumentException("Quotation must contain at least one line item");
+        }
+
         Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Customer not found: " + request.getCustomerId()));
 
@@ -303,10 +337,7 @@ public class QuotationService {
                 .lines(new ArrayList<>())
                 .build();
 
-        if (request.getLines() != null && !request.getLines().isEmpty()) {
-            applyLineItems(quotation, request.getLines());
-        }
-
+        applyLineItems(quotation, request.getLines());
         recalculateQuotation(quotation, false);
         quotation = quotationRepository.save(quotation);
 
@@ -326,8 +357,19 @@ public class QuotationService {
     public Quotation updateQuotationLines(Long quotationId, List<LineItemRequest> lineRequests, String changedBy, AuthUser authUser) {
         Quotation quotation = getQuotationByIdSecured(quotationId, authUser);
 
-        if ("PENDING_APPROVAL".equals(quotation.getStatus()) || "CONFIRMED".equals(quotation.getStatus()) || "CLOSED".equals(quotation.getStatus())) {
-            throw new IllegalStateException("Cannot edit quotation lines while status is " + quotation.getStatus());
+        if (authUser != null && authUser.getUser() != null && "CUSTOMER".equalsIgnoreCase(authUser.getUser().getRole())) {
+            throw new org.springframework.security.access.AccessDeniedException("Customers cannot directly edit quotation lines");
+        }
+
+        if (lineRequests == null || lineRequests.isEmpty()) {
+            throw new IllegalArgumentException("Quotation must contain at least one line item");
+        }
+
+        String status = quotation.getStatus();
+        if ("PENDING_APPROVAL".equalsIgnoreCase(status) || "APPROVED".equalsIgnoreCase(status)
+                || "CONFIRMED".equalsIgnoreCase(status) || "FULFILLED".equalsIgnoreCase(status)
+                || "CLOSED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status)) {
+            throw new IllegalStateException("Cannot edit quotation lines while status is " + status + ". Quotation must be in DRAFT or RETURNED status.");
         }
 
         BigDecimal beforeMargin = quotation.getMarginPercentage();
@@ -361,12 +403,15 @@ public class QuotationService {
 
     public Quotation confirmQuotation(Long quotationId, String confirmedBy) {
         Quotation quotation = getQuotationById(quotationId);
+        if (!"APPROVED".equalsIgnoreCase(quotation.getStatus())) {
+            throw new IllegalStateException("Cannot confirm quotation with status: " + quotation.getStatus() + ". Only APPROVED quotations can be converted to orders.");
+        }
         quotation.setStatus("CONFIRMED");
         quotation.setLastActivityAt(LocalDateTime.now());
         quotationRepository.save(quotation);
 
         auditService.log("QUOTATION", quotation.getId(), "CONFIRMED", confirmedBy,
-                quotation.getStatus(), "CONFIRMED", "Quotation confirmed and converted to order", BigDecimal.ZERO);
+                "APPROVED", "CONFIRMED", "Quotation confirmed and converted to order", BigDecimal.ZERO);
         return quotation;
     }
 
@@ -402,6 +447,21 @@ public class QuotationService {
     private void applyLineItems(Quotation quotation, List<LineItemRequest> lineRequests) {
         if (lineRequests == null || lineRequests.isEmpty()) return;
 
+        for (LineItemRequest lr : lineRequests) {
+            if (lr.getProductId() == null) {
+                throw new IllegalArgumentException("Product ID is required for each quotation line");
+            }
+            if (lr.getQuantity() != null && lr.getQuantity() <= 0) {
+                throw new IllegalArgumentException("Quantity must be greater than 0");
+            }
+            if (lr.getDiscountPercent() != null && lr.getDiscountPercent().compareTo(BigDecimal.ZERO) < 0) {
+                throw new IllegalArgumentException("Discount cannot be negative");
+            }
+            if (lr.getDiscountPercent() != null && lr.getDiscountPercent().compareTo(BigDecimal.valueOf(100)) > 0) {
+                throw new IllegalArgumentException("Discount cannot exceed 100%");
+            }
+        }
+
         List<Long> productIds = lineRequests.stream()
                 .map(LineItemRequest::getProductId)
                 .filter(Objects::nonNull)
@@ -420,29 +480,54 @@ public class QuotationService {
             BigDecimal costPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
             BigDecimal discount = lr.getDiscountPercent() != null ? lr.getDiscountPercent() : BigDecimal.ZERO;
 
-            BigDecimal discountFactor = BigDecimal.ONE.subtract(discount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
-            BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(qty)).multiply(discountFactor).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal totalCost = costPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal marginAmount = lineTotal.subtract(totalCost).setScale(2, RoundingMode.HALF_UP);
+            final Long targetProdId = product.getId();
+            // Check if line with same product already exists in quotation (Consolidate duplicates - Requirement 15)
+            Optional<QuotationLine> existingLineOpt = quotation.getLines().stream()
+                    .filter(l -> l.getProduct() != null && targetProdId.equals(l.getProduct().getId()))
+                    .findFirst();
 
-            String lineType = lr.getLineType() != null ? lr.getLineType() : (Boolean.TRUE.equals(product.getIsSubscription()) ? "RECURRING" : "ONE_TIME");
+            if (existingLineOpt.isPresent()) {
+                QuotationLine existingLine = existingLineOpt.get();
+                int combinedQty = existingLine.getQuantity() + qty;
+                existingLine.setQuantity(combinedQty);
 
-            QuotationLine line = QuotationLine.builder()
-                    .quotation(quotation)
-                    .product(product)
-                    .quantity(qty)
-                    .unitPrice(unitPrice)
-                    .costPrice(costPrice)
-                    .discountPercent(discount)
-                    .lineTotal(lineTotal)
-                    .marginAmount(marginAmount)
-                    .lineType(lineType)
-                    .subscriptionPlanId(lr.getSubscriptionPlanId())
-                    .status("OK")
-                    .overagePoints(BigDecimal.ZERO)
-                    .build();
+                if (lr.getDiscountPercent() != null && lr.getDiscountPercent().compareTo(BigDecimal.ZERO) > 0) {
+                    existingLine.setDiscountPercent(discount);
+                }
 
-            quotation.getLines().add(line);
+                BigDecimal effUnit = existingLine.getUnitPrice() != null ? existingLine.getUnitPrice() : unitPrice;
+                BigDecimal effCost = existingLine.getCostPrice() != null ? existingLine.getCostPrice() : costPrice;
+                BigDecimal effDisc = existingLine.getDiscountPercent() != null ? existingLine.getDiscountPercent() : BigDecimal.ZERO;
+                BigDecimal effFactor = BigDecimal.ONE.subtract(effDisc.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                BigDecimal effLineTotal = effUnit.multiply(BigDecimal.valueOf(combinedQty)).multiply(effFactor).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal effCostTotal = effCost.multiply(BigDecimal.valueOf(combinedQty)).setScale(2, RoundingMode.HALF_UP);
+                existingLine.setLineTotal(effLineTotal);
+                existingLine.setMarginAmount(effLineTotal.subtract(effCostTotal).setScale(2, RoundingMode.HALF_UP));
+            } else {
+                BigDecimal discountFactor = BigDecimal.ONE.subtract(discount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(qty)).multiply(discountFactor).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal totalCost = costPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal marginAmount = lineTotal.subtract(totalCost).setScale(2, RoundingMode.HALF_UP);
+
+                String lineType = lr.getLineType() != null ? lr.getLineType() : (Boolean.TRUE.equals(product.getIsSubscription()) ? "RECURRING" : "ONE_TIME");
+
+                QuotationLine line = QuotationLine.builder()
+                        .quotation(quotation)
+                        .product(product)
+                        .quantity(qty)
+                        .unitPrice(unitPrice)
+                        .costPrice(costPrice)
+                        .discountPercent(discount)
+                        .lineTotal(lineTotal)
+                        .marginAmount(marginAmount)
+                        .lineType(lineType)
+                        .subscriptionPlanId(lr.getSubscriptionPlanId())
+                        .status("OK")
+                        .overagePoints(BigDecimal.ZERO)
+                        .build();
+
+                quotation.getLines().add(line);
+            }
         }
     }
 
@@ -492,7 +577,7 @@ public class QuotationService {
             inputs.add(new RiskScoreEngine.LineInput(line.getId(), line.getProduct(), line.getDiscountPercent(), line.getLineTotal()));
         }
 
-        RiskCalculationResult riskResult = riskScoreEngine.calculateRisk(customerTierCeiling, inputs);
+        RiskCalculationResult riskResult = discountEvaluationService.evaluate(customerTierCeiling, inputs);
         quotation.setBlendedRiskScore(riskResult.getBlendedRiskScore());
 
         // Update line-level overage and status
@@ -529,7 +614,7 @@ public class QuotationService {
             inputs.add(new RiskScoreEngine.LineInput(line.getId(), line.getProduct(), line.getDiscountPercent(), line.getLineTotal()));
         }
 
-        return riskScoreEngine.calculateRisk(customerTierCeiling, inputs);
+        return discountEvaluationService.evaluate(customerTierCeiling, inputs);
     }
 
     public Map<String, Object> submitForApproval(Long quotationId, String submittedBy) {
@@ -539,12 +624,17 @@ public class QuotationService {
     public Map<String, Object> submitForApproval(Long quotationId, String submittedBy, AuthUser authUser) {
         Quotation quotation = getQuotationByIdSecured(quotationId, authUser);
 
+        if (authUser != null && authUser.getUser() != null && "CUSTOMER".equalsIgnoreCase(authUser.getUser().getRole())) {
+            throw new org.springframework.security.access.AccessDeniedException("Customers cannot submit internal approval requests");
+        }
+
         if (quotation.getLines() == null || quotation.getLines().isEmpty()) {
             throw new IllegalArgumentException("Cannot submit quotation with no line items");
         }
 
-        if ("CONFIRMED".equals(quotation.getStatus()) || "CLOSED".equals(quotation.getStatus()) || "CANCELLED".equals(quotation.getStatus())) {
-            throw new IllegalStateException("Cannot submit quotation in status: " + quotation.getStatus());
+        String status = quotation.getStatus();
+        if (!"DRAFT".equalsIgnoreCase(status) && !"RETURNED".equalsIgnoreCase(status) && !"UNDER_NEGOTIATION".equalsIgnoreCase(status)) {
+            throw new IllegalStateException("Cannot submit quotation in status: " + status + ". Only DRAFT, RETURNED, or UNDER_NEGOTIATION quotations can be submitted.");
         }
 
         recalculateQuotation(quotation);
