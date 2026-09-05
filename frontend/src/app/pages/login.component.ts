@@ -70,8 +70,8 @@ type TabMode = 'login' | 'signup';
             </div>
 
             <!-- Error Banner -->
-            <div class="alert-error" *ngIf="loginError">
-              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <div class="alert-error" *ngIf="loginError" id="loginErrorBanner">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0">
                 <circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>
               </svg>
               <span>{{ loginError }}</span>
@@ -84,10 +84,12 @@ type TabMode = 'login' | 'signup';
                   id="loginEmail"
                   type="email"
                   class="form-control"
+                  [class.input-error]="loginError"
                   [(ngModel)]="loginEmail"
                   name="loginEmail"
                   placeholder="name@company.com"
                   autocomplete="email"
+                  (ngModelChange)="clearLoginError()"
                   required
                 />
               </div>
@@ -99,10 +101,12 @@ type TabMode = 'login' | 'signup';
                     id="loginPassword"
                     [type]="showLoginPw ? 'text' : 'password'"
                     class="form-control"
+                    [class.input-error]="loginError"
                     [(ngModel)]="loginPassword"
                     name="loginPassword"
                     placeholder="Enter your password"
                     autocomplete="current-password"
+                    (ngModelChange)="clearLoginError()"
                     required
                   />
                   <button type="button" class="eye-btn" (click)="showLoginPw=!showLoginPw" [attr.aria-label]="showLoginPw ? 'Hide password' : 'Show password'">
@@ -116,8 +120,9 @@ type TabMode = 'login' | 'signup';
                 </div>
               </div>
 
-              <button type="submit" class="btn btn-primary btn-lg btn-block" [disabled]="loginLoading">
-                {{ loginLoading ? 'Signing in...' : 'Sign In' }}
+              <button type="submit" class="btn btn-primary btn-lg btn-block" [class.btn-error-state]="loginError && !loginLoading" [disabled]="loginLoading">
+                <span *ngIf="loginLoading" class="btn-spinner"></span>
+                {{ loginLoading ? 'Signing in…' : loginError ? 'Try Again' : 'Sign In' }}
               </button>
             </form>
 
@@ -366,13 +371,21 @@ type TabMode = 'login' | 'signup';
     /* Alerts */
     .alert-error, .alert-success {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       padding: 12px 14px;
       border-radius: 8px;
       font-size: 13px;
       margin-bottom: 18px;
-      line-height: 1.4;
+      line-height: 1.45;
+      animation: shake 0.35s ease;
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%      { transform: translateX(-6px); }
+      40%      { transform: translateX(6px); }
+      60%      { transform: translateX(-4px); }
+      80%      { transform: translateX(4px); }
     }
     .alert-error {
       background: #fef2f2;
@@ -383,6 +396,39 @@ type TabMode = 'login' | 'signup';
       background: #f0fdf4;
       border: 1px solid #bbf7d0;
       color: #15803d;
+    }
+
+    /* Input error highlight */
+    .form-control.input-error {
+      border-color: #fca5a5 !important;
+      background: #fff5f5;
+    }
+    .form-control.input-error:focus {
+      border-color: #ef4444 !important;
+      box-shadow: 0 0 0 3px rgba(239,68,68,0.12);
+    }
+
+    /* Button spinner */
+    .btn-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error state button */
+    .btn-error-state {
+      background: #dc2626 !important;
+      border-color: #dc2626 !important;
+    }
+    .btn-error-state:hover {
+      background: #b91c1c !important;
     }
 
     /* Form */
@@ -506,6 +552,10 @@ export class LoginComponent implements OnInit {
     this.loginError = '';
     this.signupError = '';
     this.signupSuccess = '';
+  }
+
+  clearLoginError() {
+    if (this.loginError) this.loginError = '';
   }
 
   async handleLogin() {

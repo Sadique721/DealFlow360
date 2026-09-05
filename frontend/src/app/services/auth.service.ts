@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { tap, timeout } from 'rxjs/operators';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,10 +105,12 @@ export class AuthService {
 
   async loginWithCredentials(email: string, password: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const resp = await firstValueFrom(this.http.post<LoginResponse>(`${API_BASE}/auth/login`, {
-        email: email.trim(),
-        password
-      }));
+      const resp = await firstValueFrom(
+        this.http.post<LoginResponse>(`${API_BASE}/auth/login`, {
+          email: email.trim(),
+          password
+        }).pipe(timeout(8000))
+      );
 
       if (resp && resp.token) {
         this.applySession(resp);
@@ -116,13 +118,24 @@ export class AuthService {
       }
       return { success: false, error: 'Invalid response from server.' };
     } catch (err: any) {
+      // Timeout — backend too slow
+      if (err?.name === 'TimeoutError') {
+        return { success: false, error: 'Login request timed out. Please check that the backend server is running on port 8080.' };
+      }
+      // Wrong credentials
       if (err?.status === 401) {
-        return { success: false, error: err?.error?.error || 'Invalid email or password.' };
+        return { success: false, error: 'Invalid email or password. Please check your credentials and try again.' };
       }
+      // Account disabled
       if (err?.status === 403) {
-        return { success: false, error: err?.error?.error || 'Account is deactivated or disabled. Please contact administrator.' };
+        return { success: false, error: err?.error?.error || 'Your account is deactivated. Please contact the administrator.' };
       }
-      const msg = err?.error?.error || err?.message || 'Authentication server unreachable. Please verify backend is running on port 8080.';
+      // Network error — backend unreachable (status 0 = ECONNREFUSED)
+      if (err?.status === 0 || err?.name === 'HttpErrorResponse') {
+        return { success: false, error: 'Cannot connect to the DealFlow360 server. Please ensure the backend is running on port 8080.' };
+      }
+      // Other server errors
+      const msg = err?.error?.error || err?.error?.message || err?.message || 'Authentication failed. Please try again.';
       return { success: false, error: msg };
     }
   }
@@ -131,12 +144,14 @@ export class AuthService {
 
   async customerSignup(name: string, email: string, company: string, password: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const resp = await firstValueFrom(this.http.post<LoginResponse>(`${API_BASE}/auth/signup`, {
-        name: name.trim(),
-        email: email.trim(),
-        password,
-        team: company.trim()
-      }));
+      const resp = await firstValueFrom(
+        this.http.post<LoginResponse>(`${API_BASE}/auth/signup`, {
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          team: company.trim()
+        }).pipe(timeout(8000))
+      );
 
       if (resp && resp.token) {
         this.applySession(resp);
@@ -144,11 +159,17 @@ export class AuthService {
       }
       return { success: false, error: 'Registration failed.' };
     } catch (err: any) {
+      if (err?.name === 'TimeoutError') {
+        return { success: false, error: 'Registration request timed out. Please check that the backend is running.' };
+      }
+      if (err?.status === 0) {
+        return { success: false, error: 'Cannot connect to the server. Please ensure the backend is running on port 8080.' };
+      }
       if (err?.status === 400) {
-        const msg = err.error?.error || 'Email is already in use.';
+        const msg = err.error?.error || 'This email address is already registered.';
         return { success: false, error: msg };
       }
-      return { success: false, error: err?.error?.error || 'Signup request failed.' };
+      return { success: false, error: err?.error?.error || 'Signup request failed. Please try again.' };
     }
   }
 
