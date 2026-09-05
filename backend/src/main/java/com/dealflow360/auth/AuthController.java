@@ -40,18 +40,33 @@ public class AuthController {
 
     @PostMapping("/login")
     @Operation(summary = "Authenticate user and issue JWT token")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
-        );
-        AuthUser authUser = (AuthUser) authentication.getPrincipal();
-        User user = authUser.getUser();
-        String token = tokenProvider.generateToken(user);
-        return ResponseEntity.ok(LoginResponse.builder()
-                .token(token).type("Bearer")
-                .id(user.getId()).name(user.getName())
-                .email(user.getEmail()).role(user.getRole()).team(user.getTeam())
-                .build());
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        try {
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+            );
+            AuthUser authUser = (AuthUser) authentication.getPrincipal();
+            User user = authUser.getUser();
+            if (user.getActive() != null && !user.getActive()) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                        .body(Map.of("error", "Account is deactivated. Please contact your administrator."));
+            }
+            String token = tokenProvider.generateToken(user);
+            return ResponseEntity.ok(LoginResponse.builder()
+                    .token(token).type("Bearer")
+                    .id(user.getId()).name(user.getName())
+                    .email(user.getEmail()).role(user.getRole()).team(user.getTeam())
+                    .build());
+        } catch (org.springframework.security.authentication.BadCredentialsException ex) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Invalid email or password."));
+        } catch (org.springframework.security.authentication.DisabledException | org.springframework.security.authentication.LockedException ex) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Account is deactivated or disabled. Please contact administrator."));
+        } catch (org.springframework.security.core.AuthenticationException ex) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Authentication failed. Please verify credentials."));
+        }
     }
 
     @PostMapping("/signup")

@@ -518,15 +518,17 @@ export class LoginComponent implements OnInit {
     this.loginLoading = true;
     try {
       const result = await this.authService.loginWithCredentials(this.loginEmail.trim(), this.loginPassword);
-      this.loginLoading = false;
       if (!result.success) {
+        this.loginLoading = false;
         this.loginError = result.error || 'Authentication failed. Please verify your credentials.';
         return;
       }
-      this.redirectAfterLogin();
+      await this.redirectAfterLogin();
     } catch {
       this.loginLoading = false;
       this.loginError = 'Unable to connect to authentication service. Please check server status.';
+    } finally {
+      this.loginLoading = false;
     }
   }
 
@@ -561,19 +563,20 @@ export class LoginComponent implements OnInit {
     } catch {
       this.signupLoading = false;
       this.signupError = 'Registration failed. Please try again.';
+    } finally {
+      this.signupLoading = false;
     }
   }
 
-  private redirectAfterLogin() {
+  private async redirectAfterLogin() {
     const role = this.authService.currentRole;
     if (role === 'CUSTOMER') {
-      this.router.navigate(['/portal/CUST-TOKEN-ACME']);
+      await this.router.navigate(['/portal/CUST-TOKEN-ACME']);
     } else {
-      if (this.returnUrl && !this.returnUrl.includes('/login') && !this.returnUrl.includes('/unauthorized')) {
-        this.router.navigateByUrl(this.returnUrl);
-      } else {
-        this.router.navigate(['/dashboard/home']);
-      }
+      const target = (this.returnUrl && !this.returnUrl.includes('/login') && !this.returnUrl.includes('/unauthorized'))
+        ? this.returnUrl
+        : '/dashboard/home';
+      await this.router.navigateByUrl(target);
     }
   }
 }

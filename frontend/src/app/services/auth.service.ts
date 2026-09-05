@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -105,10 +105,10 @@ export class AuthService {
 
   async loginWithCredentials(email: string, password: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const resp = await this.http.post<LoginResponse>(`${API_BASE}/auth/login`, {
+      const resp = await firstValueFrom(this.http.post<LoginResponse>(`${API_BASE}/auth/login`, {
         email: email.trim(),
         password
-      }).toPromise();
+      }));
 
       if (resp && resp.token) {
         this.applySession(resp);
@@ -117,10 +117,10 @@ export class AuthService {
       return { success: false, error: 'Invalid response from server.' };
     } catch (err: any) {
       if (err?.status === 401) {
-        return { success: false, error: 'Invalid email or password.' };
+        return { success: false, error: err?.error?.error || 'Invalid email or password.' };
       }
       if (err?.status === 403) {
-        return { success: false, error: 'Account is deactivated or disabled. Please contact administrator.' };
+        return { success: false, error: err?.error?.error || 'Account is deactivated or disabled. Please contact administrator.' };
       }
       const msg = err?.error?.error || err?.message || 'Authentication server unreachable. Please verify backend is running on port 8080.';
       return { success: false, error: msg };
@@ -131,12 +131,12 @@ export class AuthService {
 
   async customerSignup(name: string, email: string, company: string, password: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const resp = await this.http.post<LoginResponse>(`${API_BASE}/auth/signup`, {
+      const resp = await firstValueFrom(this.http.post<LoginResponse>(`${API_BASE}/auth/signup`, {
         name: name.trim(),
         email: email.trim(),
         password,
         team: company.trim()
-      }).toPromise();
+      }));
 
       if (resp && resp.token) {
         this.applySession(resp);

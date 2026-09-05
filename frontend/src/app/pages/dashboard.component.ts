@@ -37,14 +37,14 @@ export interface NavItem {
 
         <!-- Navigation Groups -->
         <nav class="sidebar-nav">
-          <ng-container *ngFor="let section of visibleSections">
+          <ng-container *ngFor="let section of visibleSections; trackBy: trackSection">
             <div class="nav-section-header" *ngIf="!sidebarCollapsed && section.title">
               {{ section.title }}
             </div>
             <div class="nav-section-divider" *ngIf="sidebarCollapsed && section.title"></div>
 
             <a
-              *ngFor="let item of section.items"
+              *ngFor="let item of section.items; trackBy: trackItem"
               class="nav-link"
               [routerLink]="item.path"
               routerLinkActive="active"
@@ -132,10 +132,10 @@ export interface NavItem {
           </div>
         </div>
         <nav class="sidebar-nav">
-          <ng-container *ngFor="let section of visibleSections">
+          <ng-container *ngFor="let section of visibleSections; trackBy: trackSection">
             <div class="nav-section-header" *ngIf="section.title">{{ section.title }}</div>
             <a
-              *ngFor="let item of section.items"
+              *ngFor="let item of section.items; trackBy: trackItem"
               class="nav-link"
               [routerLink]="item.path"
               routerLinkActive="active"
@@ -615,8 +615,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
   ];
 
-  get visibleSections(): { title: string; items: NavItem[] }[] {
-    const role = this.currentRole;
+  visibleSections: { title: string; items: NavItem[] }[] = [];
+
+  trackSection = (_: number, s: { title: string }): string => s.title;
+  trackItem = (_: number, item: NavItem): string => item.id;
+
+  private updateVisibleSections(role: UserRole) {
     const allowed = role === 'ADMIN'
       ? this.allNav
       : this.allNav.filter(n => n.roles.includes(role));
@@ -639,7 +643,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     const admin = allowed.filter(i => i.section === 'ADMIN');
     if (admin.length > 0) sections.push({ title: 'Administration', items: admin });
 
-    return sections;
+    this.visibleSections = sections;
   }
 
   get currentPageTitle(): string {
@@ -653,29 +657,27 @@ export class DashboardComponent implements OnInit, OnDestroy {
   constructor(private authService: AuthService, private router: Router) {}
 
   ngOnInit() {
-    if (!this.authService.isAuthenticated) {
-      this.router.navigate(['/login']);
-      return;
-    }
+    this.currentRole = this.authService.currentRole || 'ADMIN';
+    this.updateVisibleSections(this.currentRole);
 
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
-        this.currentRole = role;
-        if (!role || role === 'GUEST') {
-          this.router.navigate(['/login']);
-        } else if (role === 'CUSTOMER') {
-          // Customers go directly to portal
-          this.router.navigate(['/portal/CUST-TOKEN-ACME']);
+        if (role && role !== 'GUEST') {
+          this.currentRole = role;
+          this.updateVisibleSections(role);
+          if (role === 'CUSTOMER') {
+            this.router.navigate(['/portal/CUST-TOKEN-ACME']);
+          }
         }
       })
     );
 
     this.subs.add(
       this.authService.currentUser$.subscribe(user => {
-        if (user) {
+        if (user && user.id > 0) {
           this.currentUser = user.name || 'User';
           this.userTeam = user.team || this.roleDisplayName(user.role);
-          const parts = (user.name || '').split(' ');
+          const parts = (user.name || '').trim().split(' ');
           this.userInitials = ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || 'U';
           this.avatarColor = this.roleColor(user.role as UserRole);
         }

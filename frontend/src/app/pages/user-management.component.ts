@@ -39,7 +39,7 @@ interface StaffUserForm {
 
       <!-- Summary stats -->
       <div class="grid-4 mb-6">
-        <div class="stat-card" *ngFor="let s of summaryStats()">
+        <div class="stat-card" *ngFor="let s of summaryStatsList; trackBy: trackStat">
           <div class="stat-icon" [style.background]="s.bg" [style.color]="s.color">{{ s.icon }}</div>
           <div class="stat-value" style="font-size:22px;margin:8px 0 4px">{{ s.value }}</div>
           <div class="stat-label">{{ s.label }}</div>
@@ -90,7 +90,7 @@ interface StaffUserForm {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let u of paged; let i = index">
+              <tr *ngFor="let u of pagedUsers; let i = index; trackBy: trackUser">
                 <td class="text-muted text-sm">{{ (page - 1) * perPage + i + 1 }}</td>
                 <td>
                   <div class="user-cell">
@@ -152,9 +152,9 @@ interface StaffUserForm {
           <span class="pagination-info">
             Showing {{ minVal((page-1)*perPage+1, filtered.length) }}–{{ minVal(page*perPage, filtered.length) }} of {{ filtered.length }} users
           </span>
-          <button class="page-btn" [disabled]="page===1" (click)="page=page-1">‹</button>
-          <button class="page-btn" *ngFor="let p of pageNums()" [class.active]="p===page" (click)="page=p">{{ p }}</button>
-          <button class="page-btn" [disabled]="page===totalPages" (click)="page=page+1">›</button>
+          <button class="page-btn" [disabled]="page===1" (click)="setPage(page-1)">‹</button>
+          <button class="page-btn" *ngFor="let p of pageNumbers; trackBy: trackPage" [class.active]="p===page" (click)="setPage(p)">{{ p }}</button>
+          <button class="page-btn" [disabled]="page===totalPages" (click)="setPage(page+1)">›</button>
         </div>
       </div>
 
@@ -553,14 +553,23 @@ export class UserManagementComponent implements OnInit, OnDestroy {
   form: StaffUserForm = this.blankForm();
   private subs = new Subscription();
 
+  summaryStatsList: any[] = [];
+  pagedUsers: ManagedUser[] = [];
+  pageNumbers: number[] = [];
+
+  trackUser = (_: number, u: ManagedUser): number => u.id;
+  trackPage = (_: number, p: number): number => p;
+  trackStat = (_: number, s: { label: string }): string => s.label;
+
   constructor(private authService: AuthService) {}
 
   ngOnInit() {
-    this.currentUserId = this.authService.currentUser.id;
+    this.currentUserId = this.authService.currentUser?.id || 0;
     this.subs.add(
       this.authService.managedUsers$.subscribe(users => {
-        this.users = users;
+        this.users = users || [];
         this.applyFilter();
+        this.updateStats();
       })
     );
     this.refreshUsers();
@@ -571,7 +580,12 @@ export class UserManagementComponent implements OnInit, OnDestroy {
   refreshUsers() {
     this.loading = true;
     this.authService.loadManagedUsers().subscribe({
-      next: () => this.loading = false,
+      next: (users) => {
+        this.loading = false;
+        this.users = users || [];
+        this.applyFilter();
+        this.updateStats();
+      },
       error: () => this.loading = false
     });
   }
@@ -586,26 +600,33 @@ export class UserManagementComponent implements OnInit, OnDestroy {
       (!this.statusFilter || (this.statusFilter === 'ACTIVE' ? u.active : !u.active))
     );
     this.page = 1;
+    this.updatePagination();
   }
 
-  get paged(): ManagedUser[] {
-    return this.filtered.slice((this.page - 1) * this.perPage, this.page * this.perPage);
+  setPage(p: number) {
+    if (p >= 1 && p <= this.totalPages) {
+      this.page = p;
+      this.updatePagination();
+    }
+  }
+
+  updatePagination() {
+    this.pagedUsers = this.filtered.slice((this.page - 1) * this.perPage, this.page * this.perPage);
+    const pages: number[] = [];
+    for (let i = Math.max(1, this.page - 2); i <= Math.min(this.totalPages, this.page + 2); i++) {
+      pages.push(i);
+    }
+    this.pageNumbers = pages;
   }
 
   get totalPages(): number { return Math.max(1, Math.ceil(this.filtered.length / this.perPage)); }
-
-  pageNums(): number[] {
-    const pages: number[] = [];
-    for (let i = Math.max(1, this.page - 2); i <= Math.min(this.totalPages, this.page + 2); i++) pages.push(i);
-    return pages;
-  }
 
   minVal(a: number, b: number): number { return Math.min(a, b); }
 
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
-  summaryStats() {
-    return [
+  updateStats() {
+    this.summaryStatsList = [
       { label: 'Total Users',     value: this.users.length,                                          icon: '👥', bg: '#eff6ff', color: '#2563eb' },
       { label: 'Sales Reps',      value: this.users.filter(u => u.role === 'SALES_REP').length,      icon: '💼', bg: '#f0fdf4', color: '#16a34a' },
       { label: 'Sales Managers',  value: this.users.filter(u => u.role === 'SALES_MANAGER').length,  icon: '🛡️', bg: '#fffbeb', color: '#d97706' },

@@ -276,9 +276,9 @@ export class DashboardHomeComponent implements OnInit {
 
   ngOnInit() {
     const user = this.authService.currentUser;
-    this.currentRole = user.role as string;
-    const nameParts = user.name.split(' ');
-    this.firstName = nameParts[0];
+    this.currentRole = (user?.role as string) || 'ADMIN';
+    const nameParts = (user?.name || 'Administrator').trim().split(' ');
+    this.firstName = nameParts[0] || 'User';
     this.setRoleStyle(this.currentRole);
 
     // Filter quick links by role
