@@ -1,10 +1,11 @@
-﻿import { Routes } from '@angular/router';
+import { Routes } from '@angular/router';
 import { PipelineComponent } from './pages/pipeline.component';
 import { QuoteBuilderComponent } from './pages/quote-builder.component';
 import { ApprovalCenterComponent } from './pages/approval-center.component';
 import { WarehouseSplitComponent } from './pages/warehouse-split.component';
 import { DealHealthComponent } from './pages/deal-health.component';
 import { CustomerPortalComponent } from './pages/customer-portal.component';
+import { SubscriptionBillingComponent } from './pages/subscription-billing.component';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'pipeline', pathMatch: 'full' },
@@ -13,6 +14,7 @@ export const routes: Routes = [
   { path: 'quote/:id', component: QuoteBuilderComponent },
   { path: 'approval/:id', component: ApprovalCenterComponent },
   { path: 'fulfillment/:id', component: WarehouseSplitComponent },
+  { path: 'subscription', component: SubscriptionBillingComponent },
   { path: 'deal-health', component: DealHealthComponent },
   { path: 'portal/:token', component: CustomerPortalComponent },
   { path: '**', redirectTo: 'pipeline' }
