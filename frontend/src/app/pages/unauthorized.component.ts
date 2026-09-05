@@ -217,7 +217,7 @@ export class UnauthorizedComponent implements OnInit {
 
   goToDashboard(): void {
     if (this.currentRole === 'CUSTOMER') {
-      this.router.navigate(['/portal/magic-token-acme-1042-demo']);
+      this.router.navigate(['/dashboard/customer']);
     } else {
       this.router.navigate(['/dashboard/home']);
     }

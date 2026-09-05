@@ -558,8 +558,8 @@ export class LoginComponent implements OnInit {
         this.signupError = result.error || 'Registration failed. Email may already be in use.';
         return;
       }
-      this.signupSuccess = 'Customer account registered successfully! Redirecting to portal...';
-      setTimeout(() => this.router.navigate(['/portal/magic-token-acme-1042-demo']), 1000);
+      this.signupSuccess = 'Customer account registered successfully! Redirecting to your dashboard...';
+      setTimeout(() => this.router.navigate(['/dashboard/customer']), 1000);
     } catch {
       this.signupLoading = false;
       this.signupError = 'Registration failed. Please try again.';
@@ -571,7 +571,7 @@ export class LoginComponent implements OnInit {
   private async redirectAfterLogin() {
     const role = this.authService.currentRole;
     if (role === 'CUSTOMER') {
-      await this.router.navigate(['/portal/magic-token-acme-1042-demo']);
+      await this.router.navigate(['/dashboard/customer']);
     } else {
       const target = (this.returnUrl && !this.returnUrl.includes('/login') && !this.returnUrl.includes('/unauthorized'))
         ? this.returnUrl

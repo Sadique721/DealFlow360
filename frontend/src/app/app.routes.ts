@@ -9,6 +9,7 @@ import { ApprovalCenterComponent } from './pages/approval-center.component';
 import { WarehouseSplitComponent } from './pages/warehouse-split.component';
 import { DealHealthComponent } from './pages/deal-health.component';
 import { CustomerPortalComponent } from './pages/customer-portal.component';
+import { CustomerDashboardComponent } from './pages/customer-dashboard.component';
 import { SubscriptionBillingComponent } from './pages/subscription-billing.component';
 import { InvoicesComponent } from './pages/invoices.component';
 import { UserManagementComponent } from './pages/user-management.component';
@@ -54,7 +55,14 @@ export const routes: Routes = [
         path: 'home',
         component: DashboardHomeComponent,
         canActivate: [roleGuard],
-        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE', 'CUSTOMER'] }
+        data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE'] }
+      },
+      // Customer-specific dashboard (replaces the old portal token URL for authenticated customers)
+      {
+        path: 'customer',
+        component: CustomerDashboardComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN', 'CUSTOMER'] }
       },
       {
         path: 'pipeline',
