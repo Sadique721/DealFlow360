@@ -1,4 +1,4 @@
-import { Quotation, Product, ApprovalRequest, FulfillmentSplit, Warehouse, DealHealthFlag, SubscriptionContract } from '../models/dealflow.model';
+import { Quotation, Product, Customer, PriceList, ApprovalRequest, FulfillmentSplit, Warehouse, DealHealthFlag, SubscriptionContract } from '../models/dealflow.model';
 
 // Utility random generator helpers for deterministic 120+ enterprise records
 const CLIENT_COMPANIES = [
@@ -281,5 +281,35 @@ export function generate120Subscriptions(quotes: Quotation[]): SubscriptionContr
       creditNoteId: status === 'PENDING_PRORATION' ? `CR-${1000 + idx}` : undefined
     };
   });
+}
+
+// Generate Mock Enterprise Customers for instantaneous CPQ quotation builder dropdowns
+export function generateMockCustomers(): Customer[] {
+  const tiers = [
+    { id: 1, tierName: 'Enterprise Diamond', code: 'DIAMOND', maxDiscountFloorPct: 25, freightDiscountPct: 50 },
+    { id: 2, tierName: 'Platinum Partner', code: 'PLATINUM', maxDiscountFloorPct: 20, freightDiscountPct: 35 },
+    { id: 3, tierName: 'Gold Corporate', code: 'GOLD', maxDiscountFloorPct: 15, freightDiscountPct: 20 },
+    { id: 4, tierName: 'Silver Commercial', code: 'SILVER', maxDiscountFloorPct: 10, freightDiscountPct: 10 }
+  ];
+  return CLIENT_COMPANIES.map((name, idx) => ({
+    id: idx + 1,
+    name: name,
+    code: `CUST-${1000 + idx + 1}`,
+    email: `procurement@${name.toLowerCase().replace(/[^a-z]/g, '')}.com`,
+    contactEmail: `procurement@${name.toLowerCase().replace(/[^a-z]/g, '')}.com`,
+    destinationRegion: idx % 4 === 0 ? 'North America' : idx % 4 === 1 ? 'EMEA' : idx % 4 === 2 ? 'APAC' : 'LATAM',
+    address: `${100 + idx * 10} Innovation Parkway, Suite ${200 + idx}`,
+    tier: tiers[idx % tiers.length]
+  }));
+}
+
+// Generate Mock Enterprise Price Books
+export function generateMockPriceLists(): PriceList[] {
+  return [
+    { id: 1, customerTier: 'Enterprise Diamond', currency: 'USD', discountAdjustmentPercent: 0 },
+    { id: 2, customerTier: 'Platinum Partner', currency: 'USD', discountAdjustmentPercent: 2 },
+    { id: 3, customerTier: 'Gold Corporate', currency: 'USD', discountAdjustmentPercent: 5 },
+    { id: 4, customerTier: 'Silver Commercial', currency: 'USD', discountAdjustmentPercent: 8 }
+  ];
 }
 
