@@ -101,4 +101,43 @@ class RiskScoreEngineTest {
         assertEquals("AUTO_APPROVED", result.getRoutingDecision());
         assertEquals(0.0, result.getBlendedRiskScore().doubleValue());
     }
+
+    @Test
+    @DisplayName("Small single-line overage (0.8% over limit) routes to Sales Manager only (1-tier, score = 8.00)")
+    void testSmallOverage_RoutesToManagerOnly() {
+        BigDecimal goldTierCeiling = BigDecimal.valueOf(15.00);
+
+        // Hardware ceiling is 15%. Discount is 15.8% (0.8% overage). Blended score = 0.8 * 10 = 8.00 <= 10.0.
+        RiskScoreEngine.LineInput laptopLine = new RiskScoreEngine.LineInput(
+                1L, laptopProduct, BigDecimal.valueOf(15.80), BigDecimal.valueOf(1010.40));
+
+        RiskCalculationResult result = engine.calculateRisk(goldTierCeiling, List.of(laptopLine));
+
+        assertNotNull(result);
+        assertTrue(result.getRequiresApproval(), "Must require manager approval");
+        assertFalse(result.getRequiresFinance(), "Must NOT require Finance for score <= 10.0");
+        assertEquals("SALES_MANAGER_ONLY", result.getRoutingDecision());
+        assertEquals(8.0, result.getBlendedRiskScore().doubleValue(), 0.05);
+    }
+
+    @Test
+    @DisplayName("Multi-line systemic erosion: 3 lines each 2.5% over ceiling accumulates blended score triggering governance")
+    void testMultiLineSystemicErosion_CatchesBlendedRisk() {
+        BigDecimal silverTierCeiling = BigDecimal.valueOf(10.00);
+
+        // Category ceiling 15%, but Silver customer tier ceiling is 10%.
+        // 3 lines with 12.5% discount -> each has 2.5% overage.
+        RiskScoreEngine.LineInput line1 = new RiskScoreEngine.LineInput(1L, laptopProduct, BigDecimal.valueOf(12.50), BigDecimal.valueOf(1000.00));
+        RiskScoreEngine.LineInput line2 = new RiskScoreEngine.LineInput(2L, laptopProduct, BigDecimal.valueOf(12.50), BigDecimal.valueOf(1000.00));
+        RiskScoreEngine.LineInput line3 = new RiskScoreEngine.LineInput(3L, laptopProduct, BigDecimal.valueOf(12.50), BigDecimal.valueOf(1000.00));
+
+        RiskCalculationResult result = engine.calculateRisk(silverTierCeiling, List.of(line1, line2, line3));
+
+        assertNotNull(result);
+        assertTrue(result.getRequiresApproval(), "Must require approval");
+        // Blended score = 2.5 * 10 = 25.0 > 10.0 threshold
+        assertTrue(result.getBlendedRiskScore().doubleValue() > 10.0, "Score must exceed 10.0");
+        assertTrue(result.getRequiresFinance(), "Must escalate to Finance due to high cumulative blended score");
+        assertEquals("SEQUENTIAL_MANAGER_AND_FINANCE", result.getRoutingDecision());
+    }
 }

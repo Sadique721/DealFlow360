@@ -302,6 +302,10 @@ public class QuotationService {
         return quotation;
     }
 
+    public Quotation updateQuotationLines(Long quotationId, List<LineItemRequest> lineRequests, String changedBy) {
+        return updateQuotationLines(quotationId, lineRequests, changedBy, null);
+    }
+
     public Quotation updateQuotationLines(Long quotationId, List<LineItemRequest> lineRequests, String changedBy, AuthUser authUser) {
         Quotation quotation = getQuotationByIdSecured(quotationId, authUser);
 
@@ -473,13 +477,26 @@ public class QuotationService {
     }
 
     public Map<String, Object> submitForApproval(Long quotationId, String submittedBy) {
-        Quotation quotation = getQuotationById(quotationId);
-        recalculateQuotation(quotation);
+        return submitForApproval(quotationId, submittedBy, null);
+    }
 
+    public Map<String, Object> submitForApproval(Long quotationId, String submittedBy, AuthUser authUser) {
+        Quotation quotation = getQuotationByIdSecured(quotationId, authUser);
+
+        if (quotation.getLines() == null || quotation.getLines().isEmpty()) {
+            throw new IllegalArgumentException("Cannot submit quotation with no line items");
+        }
+
+        if ("CONFIRMED".equals(quotation.getStatus()) || "CLOSED".equals(quotation.getStatus()) || "CANCELLED".equals(quotation.getStatus())) {
+            throw new IllegalStateException("Cannot submit quotation in status: " + quotation.getStatus());
+        }
+
+        recalculateQuotation(quotation);
         RiskCalculationResult risk = getQuotationRiskBreakdown(quotationId);
 
         if (!risk.getRequiresApproval()) {
             // Auto-approved! No manager review needed.
+            approvalRequestRepository.findByQuotationId(quotationId).ifPresent(approvalRequestRepository::delete);
             quotation.setStatus("APPROVED");
             quotation.setLastActivityAt(LocalDateTime.now());
             quotationRepository.save(quotation);
@@ -491,7 +508,10 @@ public class QuotationService {
                     "status", "APPROVED",
                     "requiresApproval", false,
                     "riskScore", risk.getBlendedRiskScore(),
-                    "message", risk.getFullExplanation()
+                    "riskLevel", risk.getRiskLevel(),
+                    "requiresFinance", false,
+                    "message", risk.getFullExplanation(),
+                    "explanation", risk.getFullExplanation()
             );
         }
 
@@ -559,6 +579,7 @@ public class QuotationService {
                 "riskScore", risk.getBlendedRiskScore(),
                 "riskLevel", risk.getRiskLevel(),
                 "requiresFinance", risk.getRequiresFinance(),
+                "message", risk.getFullExplanation(),
                 "explanation", risk.getFullExplanation()
         );
     }

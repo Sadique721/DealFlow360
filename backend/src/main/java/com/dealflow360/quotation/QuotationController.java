@@ -77,7 +77,7 @@ public class QuotationController {
             @PathVariable Long id,
             @AuthenticationPrincipal AuthUser authUser) {
         String submittedBy = authUser != null ? authUser.getName() : "Sales Rep";
-        return ResponseEntity.ok(quotationService.submitForApproval(id, submittedBy));
+        return ResponseEntity.ok(quotationService.submitForApproval(id, submittedBy, authUser));
     }
 
     @PostMapping("/{id}/confirm")

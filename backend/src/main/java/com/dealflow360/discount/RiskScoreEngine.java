@@ -92,10 +92,10 @@ public class RiskScoreEngine {
             totalWeightedRisk = totalWeightedRisk.add(contribution);
 
             boolean isCulprit = overage.compareTo(BigDecimal.ZERO) > 0;
-            if (overage.doubleValue() >= 5.0) {
+            if (overage.compareTo(BigDecimal.valueOf(5.0)) > 0) {
                 hasSpike = true;
             }
-            if (overage.doubleValue() >= singleLineSpikeThreshold || line.discountPercent.doubleValue() >= 20.0) {
+            if (overage.compareTo(BigDecimal.valueOf(singleLineSpikeThreshold)) >= 0 || line.discountPercent.doubleValue() >= 25.0) {
                 hasCriticalSingleLine = true;
             }
 
@@ -104,9 +104,8 @@ public class RiskScoreEngine {
                     : "OK";
 
             if (isCulprit && culpritSummary == null) {
-                culpritSummary = String.format("Line [%s] breached %s ceiling by %.2f pt (given %.2f%%, limit %.2f%%)",
+                culpritSummary = String.format("Line [%s] breached ceiling by %.2f pt (given %.2f%%, limit %.2f%%)",
                         prod != null ? prod.getName() : "Item",
-                        cat != null ? cat.getName() : "Category",
                         overage.doubleValue(),
                         line.discountPercent.doubleValue(),
                         effectiveCeiling.doubleValue());
@@ -163,8 +162,8 @@ public class RiskScoreEngine {
             requiresFinance = true;
             explanation = String.format("Blended Risk Score is %.2f (> %.1f threshold%s). %s. High margin erosion risk triggers sequential two-tier governance: Sales Manager followed by Finance Controller.",
                     score,
-                    financeThreshold,
-                    hasCriticalSingleLine ? " or single-line spike > 8pt" : "",
+                    managerThreshold,
+                    hasCriticalSingleLine ? " or single-line overage >= 8.0%" : "",
                     culpritSummary != null ? culpritSummary : "Systemic margin erosion across multiple lines");
         }
 

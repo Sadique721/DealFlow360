@@ -440,9 +440,9 @@ import { Subscription } from 'rxjs';
                 <h4>Blended Discount Risk Engine</h4>
                 <span
                   class="badge"
-                  [class.badge-success]="currentRiskSeverity === 'LOW'"
+                  [class.badge-success]="currentRiskSeverity === 'NONE' || currentRiskSeverity === 'LOW'"
                   [class.badge-warning]="currentRiskSeverity === 'MEDIUM'"
-                  [class.badge-danger]="currentRiskSeverity === 'HIGH' || currentRiskSeverity === 'CRITICAL'"
+                  [class.badge-danger]="currentRiskSeverity === 'HIGH'"
                 >
                   {{ currentRiskSeverity }} RISK
                 </span>
@@ -452,32 +452,38 @@ import { Subscription } from 'rxjs';
                 <div class="risk-bar-bg">
                   <div
                     class="risk-bar-fill"
-                    [style.width.%]="Math.min(100, currentRiskScore)"
+                    [style.width.%]="Math.min(100, (currentRiskScore / 25) * 100)"
                     [style.background]="getRiskColor(currentRiskSeverity)"
                   ></div>
                 </div>
                 <div class="risk-bar-meta">
-                  <span>Calculated Risk Score: <strong>{{ currentRiskScore | number:'1.1-1' }}/100</strong></span>
-                  <span>Threshold: 25.0</span>
+                  <span>Blended Risk Score: <strong>{{ currentRiskScore | number:'1.2-2' }}</strong></span>
+                  <span>Routing: <strong>{{ currentRiskScore === 0 ? 'Auto-Approve' : (requiresFinanceApproval ? '2-Tier (Manager + Finance)' : '1-Tier (Manager)') }}</strong></span>
                 </div>
               </div>
 
               <!-- Approval Hierarchy Matrix Notice -->
-              <div class="approval-notice" *ngIf="requiresManagerApproval || requiresFinanceApproval">
+              <div class="approval-notice alert-danger" *ngIf="requiresFinanceApproval" style="margin-top: 12px; padding: 10px; border-radius: 6px;">
                 <div class="notice-icon">🛡️</div>
                 <div>
-                  <strong>Governance Policy Triggered:</strong>
-                  <p>
-                    {{ requiresFinanceApproval ? 'Single line discount exceeds 15% ceiling or margin < 20%. Requires Sales Manager + CFO sign-off.' : 'Blended discount exceeds 10%. Requires Sales Manager approval.' }}
-                  </p>
+                  <strong>Dual-Tier Governance Triggered:</strong>
+                  <p style="margin: 0; font-size: 12px;">Risk Score &gt; 10.0 or line overage &ge; 8.0%. Requires sequential review by Sales Manager followed by Finance Controller.</p>
                 </div>
               </div>
 
-              <div class="approval-notice success-notice" *ngIf="!requiresManagerApproval && !requiresFinanceApproval">
+              <div class="approval-notice alert-warning" *ngIf="requiresManagerApproval && !requiresFinanceApproval" style="margin-top: 12px; padding: 10px; border-radius: 6px;">
+                <div class="notice-icon">👤</div>
+                <div>
+                  <strong>Manager Governance (1-Tier):</strong>
+                  <p style="margin: 0; font-size: 12px;">Risk Score is &le; 10.0. Requires review and sign-off by Sales Manager.</p>
+                </div>
+              </div>
+
+              <div class="approval-notice alert-success" *ngIf="!requiresManagerApproval" style="margin-top: 12px; padding: 10px; border-radius: 6px;">
                 <div class="notice-icon">✓</div>
                 <div>
                   <strong>Auto-Approved (Level 0):</strong>
-                  <p>All line discounts within category ceilings and margin exceeds target. Ready to convert.</p>
+                  <p style="margin: 0; font-size: 12px;">All line discounts within category &amp; tier allowances. Will auto-approve immediately upon submission.</p>
                 </div>
               </div>
             </div>
@@ -1177,33 +1183,72 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     return Math.max(0, ((revenue - cost) / revenue) * 100);
   }
 
+  getCustomerTierCeiling(): number {
+    let tier = 'BRONZE';
+    if (this.isCreateMode) {
+      const cust = this.availableCustomers.find(c => c.id === this.selectedCustomerId);
+      if (cust) tier = this.getCustomerTierString(cust);
+    } else if (this.quote?.customer) {
+      tier = this.getCustomerTierString(this.quote.customer);
+    }
+    const t = (tier || '').toUpperCase();
+    if (t.includes('PLATINUM')) return 25.0;
+    if (t.includes('GOLD')) return 15.0;
+    if (t.includes('SILVER')) return 10.0;
+    return 5.0;
+  }
+
+  getLineEffectiveCeiling(line: QuotationLine): number {
+    const tierCeiling = this.getCustomerTierCeiling();
+    const catCeiling = line.product?.category?.maxDiscountCeilingPct || line.product?.category?.maxDiscountPercent || 10.0;
+    return Math.min(tierCeiling, catCeiling);
+  }
+
+  getLineOverage(line: QuotationLine): number {
+    const ceiling = this.getLineEffectiveCeiling(line);
+    const disc = line.unitDiscountPct || 0;
+    return Math.max(0, disc - ceiling);
+  }
+
   get currentRiskScore(): number {
-    if (this.quote?.blendedRiskScore != null) return this.quote.blendedRiskScore;
-    if (this.quote?.riskScore != null) return this.quote.riskScore;
+    if (this.lines.length === 0) return 0;
+    const orderTotal = this.currentTotalAmount;
+    if (orderTotal <= 0) return 0;
 
-    const disc = this.currentDiscountPct;
-    const margin = this.currentMargin;
-    const hasSpike = this.lines.some(l => this.isOverage(l));
+    let totalWeightedRisk = 0;
+    let hasSpike = false;
 
-    if (margin < 18 || disc > 20) return 85.0;
-    if (hasSpike || disc > 12) return 58.0;
-    return Number((disc * 1.5).toFixed(1));
+    for (const l of this.lines) {
+      const overage = this.getLineOverage(l);
+      const lineVal = (l.lineTotal || (this.getLineListPrice(l) * l.quantity * (1 - (l.unitDiscountPct || 0)/100)));
+      const weight = lineVal / orderTotal;
+      const gamma = l.product?.category?.sensitivityGamma || 1.0;
+      totalWeightedRisk += overage * weight * gamma;
+      if (overage > 5.0) {
+        hasSpike = true;
+      }
+    }
+
+    const singleLinePenalty = hasSpike ? 5.0 : 0.0;
+    const score = (totalWeightedRisk * 10) + singleLinePenalty;
+    return Number(score.toFixed(2));
   }
 
   get currentRiskSeverity(): string {
     const score = this.currentRiskScore;
-    if (score >= 60) return 'CRITICAL';
-    if (score >= 35) return 'HIGH';
-    if (score >= 15) return 'MEDIUM';
-    return 'LOW';
+    if (score === 0) return 'NONE';
+    if (score <= 5) return 'LOW';
+    if (score <= 10) return 'MEDIUM';
+    return 'HIGH';
   }
 
   get requiresManagerApproval(): boolean {
-    return this.currentRiskScore >= 25 || this.currentDiscountPct > 10 || this.lines.some(l => this.isOverage(l));
+    return this.currentRiskScore > 0;
   }
 
   get requiresFinanceApproval(): boolean {
-    return this.currentRiskScore >= 60 || this.currentMargin < 20 || this.currentDiscountPct > 18;
+    const hasSpikeOver8 = this.lines.some(l => this.getLineOverage(l) >= 8.0);
+    return this.currentRiskScore > 10 || hasSpikeOver8;
   }
 
   getLineListPrice(line: QuotationLine): number {
@@ -1460,7 +1505,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
   }
 
   isOverage(line: QuotationLine): boolean {
-    const ceiling = line.product?.category?.maxDiscountCeilingPct || line.product?.category?.maxDiscountPercent || 15;
+    const ceiling = this.getLineEffectiveCeiling(line);
     return (line.unitDiscountPct || 0) > ceiling;
   }
 
