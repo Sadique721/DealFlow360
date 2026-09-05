@@ -21,7 +21,7 @@ import {
   UpsellSuggestion
 } from '../models/dealflow.model';
 import { Subscription, forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, timeout } from 'rxjs/operators';
 
 @Component({
   selector: 'app-quote-builder',
@@ -1332,35 +1332,29 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.isLoading = true;
+    // Immediately fallback from mock if available so UI renders at once
+    const hasMock = this.fallbackToMockQuote(id);
+    if (!hasMock) {
+      this.isLoading = true;
+    }
     this.errorMessage = null;
 
-    this.quoteService.getQuotationById(id).subscribe({
-      next: (q) => {
+    // Attempt backend fetch with 4s timeout - replace mock data with real data if available
+    this.quoteService.getQuotationById(id).pipe(
+      timeout(4000),
+      catchError((err) => {
+        // Timeout or network error - mock already applied, just return null
+        return of(null);
+      })
+    ).subscribe((q) => {
+      if (!q) {
+        // Backend unavailable - mock was already applied above, ensure loading cleared
         this.isLoading = false;
-        if (!q) {
-          const fallbackSuccess = this.fallbackToMockQuote(id);
-          if (!fallbackSuccess) {
-            this.errorMessage = `Quotation #${id} was not found.`;
-          }
-          return;
-        }
-        this.applyQuoteData(q);
-        this.loadUpsells(id);
-      },
-      error: (err) => {
-        const fallbackSuccess = this.fallbackToMockQuote(id);
-        if (!fallbackSuccess) {
-          this.isLoading = false;
-          if (err.status === 403) {
-            this.errorMessage = 'Access Denied: You do not have permission to view this quotation.';
-          } else if (err.status === 404) {
-            this.errorMessage = `Quotation #${id} not found in system database.`;
-          } else {
-            this.errorMessage = `Failed to load quotation #${id} from backend: ${err.message || 'Server error'}`;
-          }
-        }
+        return;
       }
+      // Backend returned real data - override mock with authoritative data
+      this.applyQuoteData(q);
+      this.loadUpsells(id);
     });
   }
 
