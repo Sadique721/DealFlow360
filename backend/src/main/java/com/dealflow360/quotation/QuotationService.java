@@ -30,6 +30,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -160,6 +161,9 @@ public class QuotationService {
             Optional<Customer> custOpt = customerRepository.findById(request.getCustomerId());
             if (custOpt.isPresent() && custOpt.get().getTier() != null) {
                 Optional<CustomerTier> tierOpt = customerTierRepository.findByTierName(custOpt.get().getTier());
+                if (tierOpt.isEmpty()) {
+                    tierOpt = customerTierRepository.findByTierNameIgnoreCase(custOpt.get().getTier());
+                }
                 if (tierOpt.isPresent()) {
                     customerTierCeiling = tierOpt.get().getMaxDiscountPercent();
                 }
@@ -169,15 +173,24 @@ public class QuotationService {
         List<QuotationCalculateResponse.CalculatedLineResponse> calcLines = new ArrayList<>();
         List<RiskScoreEngine.LineInput> riskInputs = new ArrayList<>();
 
-        if (request.getLines() != null) {
+        if (request.getLines() != null && !request.getLines().isEmpty()) {
+            List<Long> productIds = request.getLines().stream()
+                    .map(LineItemRequest::getProductId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            Map<Long, Product> productMap = fetchProductsBatch(productIds);
+
             for (int i = 0; i < request.getLines().size(); i++) {
                 LineItemRequest lr = request.getLines().get(i);
-                Product product = productRepository.findById(lr.getProductId())
-                        .orElseThrow(() -> new RuntimeException("Product not found: " + lr.getProductId()));
+                Product product = productMap.get(lr.getProductId());
+                if (product == null) {
+                    product = productRepository.findById(lr.getProductId())
+                            .orElseThrow(() -> new RuntimeException("Product not found: " + lr.getProductId()));
+                }
 
                 int qty = lr.getQuantity() != null && lr.getQuantity() > 0 ? lr.getQuantity() : 1;
                 BigDecimal unitPrice = lr.getUnitPrice() != null ? lr.getUnitPrice() : product.getBasePrice();
-                BigDecimal costPrice = product.getCostPrice();
+                BigDecimal costPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
                 BigDecimal discountPercent = lr.getDiscountPercent() != null ? lr.getDiscountPercent() : BigDecimal.ZERO;
 
                 BigDecimal lineGross = unitPrice.multiply(BigDecimal.valueOf(qty));
@@ -272,11 +285,10 @@ public class QuotationService {
                     .orElseThrow(() -> new RuntimeException("User not found: " + repEmail));
         }
 
-        long nextNum = 1000 + quotationRepository.count() + 1;
-        while (quotationRepository.findByQuoteNumber("Q-" + nextNum).isPresent()) {
-            nextNum++;
+        String quoteNumber = "Q-" + (1000 + quotationRepository.count() + 1);
+        if (quotationRepository.findByQuoteNumber(quoteNumber).isPresent()) {
+            quoteNumber = "Q-" + (System.currentTimeMillis() % 1000000);
         }
-        String quoteNumber = "Q-" + nextNum;
         String portalToken = "portal-" + UUID.randomUUID().toString();
 
         Quotation quotation = Quotation.builder()
@@ -288,15 +300,16 @@ public class QuotationService {
                 .promisedDeliveryDate(request.getPromisedDeliveryDate())
                 .version(1)
                 .lastActivityAt(LocalDateTime.now())
+                .lines(new ArrayList<>())
                 .build();
-
-        quotation = quotationRepository.save(quotation);
 
         if (request.getLines() != null && !request.getLines().isEmpty()) {
             applyLineItems(quotation, request.getLines());
         }
 
-        recalculateQuotation(quotation);
+        recalculateQuotation(quotation, false);
+        quotation = quotationRepository.save(quotation);
+
         createVersionSnapshot(quotation, salesRep.getName(), "Initial quotation draft created");
 
         auditService.log("QUOTATION", quotation.getId(), "CREATED", salesRep.getName(),
@@ -319,15 +332,13 @@ public class QuotationService {
 
         BigDecimal beforeMargin = quotation.getMarginPercentage();
 
-        quotationLineRepository.deleteAll(quotation.getLines());
         quotation.getLines().clear();
-
         applyLineItems(quotation, lineRequests);
-        recalculateQuotation(quotation);
+        recalculateQuotation(quotation, false);
 
         quotation.setVersion(quotation.getVersion() + 1);
         quotation.setLastActivityAt(LocalDateTime.now());
-        quotationRepository.save(quotation);
+        quotation = quotationRepository.save(quotation);
 
         createVersionSnapshot(quotation, changedBy, "Quotation lines updated");
 
@@ -370,14 +381,43 @@ public class QuotationService {
         return quotation;
     }
 
+    private Map<Long, Product> fetchProductsBatch(Collection<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            List<Product> products = productRepository.findAllByIdInWithCategory(productIds);
+            if (products != null && !products.isEmpty()) {
+                return products.stream().collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
+            }
+            products = productRepository.findAllById(productIds);
+            if (products != null && !products.isEmpty()) {
+                return products.stream().collect(Collectors.toMap(Product::getId, p -> p, (a, b) -> a));
+            }
+        } catch (Exception ignored) {
+        }
+        return Collections.emptyMap();
+    }
+
     private void applyLineItems(Quotation quotation, List<LineItemRequest> lineRequests) {
+        if (lineRequests == null || lineRequests.isEmpty()) return;
+
+        List<Long> productIds = lineRequests.stream()
+                .map(LineItemRequest::getProductId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<Long, Product> productMap = fetchProductsBatch(productIds);
+
         for (LineItemRequest lr : lineRequests) {
-            Product product = productRepository.findById(lr.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Product not found: " + lr.getProductId()));
+            Product product = productMap.get(lr.getProductId());
+            if (product == null) {
+                product = productRepository.findById(lr.getProductId())
+                        .orElseThrow(() -> new RuntimeException("Product not found: " + lr.getProductId()));
+            }
 
             int qty = lr.getQuantity() != null && lr.getQuantity() > 0 ? lr.getQuantity() : 1;
             BigDecimal unitPrice = lr.getUnitPrice() != null ? lr.getUnitPrice() : product.getBasePrice();
-            BigDecimal costPrice = product.getCostPrice();
+            BigDecimal costPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
             BigDecimal discount = lr.getDiscountPercent() != null ? lr.getDiscountPercent() : BigDecimal.ZERO;
 
             BigDecimal discountFactor = BigDecimal.ONE.subtract(discount.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
@@ -385,7 +425,7 @@ public class QuotationService {
             BigDecimal totalCost = costPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal marginAmount = lineTotal.subtract(totalCost).setScale(2, RoundingMode.HALF_UP);
 
-            String lineType = lr.getLineType() != null ? lr.getLineType() : (product.getIsSubscription() ? "RECURRING" : "ONE_TIME");
+            String lineType = lr.getLineType() != null ? lr.getLineType() : (Boolean.TRUE.equals(product.getIsSubscription()) ? "RECURRING" : "ONE_TIME");
 
             QuotationLine line = QuotationLine.builder()
                     .quotation(quotation)
@@ -407,6 +447,10 @@ public class QuotationService {
     }
 
     public void recalculateQuotation(Quotation quotation) {
+        recalculateQuotation(quotation, true);
+    }
+
+    public void recalculateQuotation(Quotation quotation, boolean persist) {
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal totalAmount = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
@@ -435,6 +479,9 @@ public class QuotationService {
         BigDecimal customerTierCeiling = BigDecimal.valueOf(5.00); // Default Bronze
         if (quotation.getCustomer() != null && quotation.getCustomer().getTier() != null) {
             Optional<CustomerTier> tierOpt = customerTierRepository.findByTierName(quotation.getCustomer().getTier());
+            if (tierOpt.isEmpty()) {
+                tierOpt = customerTierRepository.findByTierNameIgnoreCase(quotation.getCustomer().getTier());
+            }
             if (tierOpt.isPresent()) {
                 customerTierCeiling = tierOpt.get().getMaxDiscountPercent();
             }
@@ -454,11 +501,13 @@ public class QuotationService {
                 LineOverageDetail lod = riskResult.getLineDetails().get(i);
                 QuotationLine ql = quotation.getLines().get(i);
                 ql.setOveragePoints(lod.getOveragePoints());
-                ql.setStatus(lod.getIsCulprit() ? "OVER" : "OK");
+                ql.setStatus(Boolean.TRUE.equals(lod.getIsCulprit()) ? "OVER" : "OK");
             }
         }
 
-        quotationRepository.save(quotation);
+        if (persist) {
+            quotationRepository.save(quotation);
+        }
     }
 
     public RiskCalculationResult getQuotationRiskBreakdown(Long quotationId) {
@@ -467,6 +516,9 @@ public class QuotationService {
         BigDecimal customerTierCeiling = BigDecimal.valueOf(5.00);
         if (quotation.getCustomer() != null && quotation.getCustomer().getTier() != null) {
             Optional<CustomerTier> tierOpt = customerTierRepository.findByTierName(quotation.getCustomer().getTier());
+            if (tierOpt.isEmpty()) {
+                tierOpt = customerTierRepository.findByTierNameIgnoreCase(quotation.getCustomer().getTier());
+            }
             if (tierOpt.isPresent()) {
                 customerTierCeiling = tierOpt.get().getMaxDiscountPercent();
             }

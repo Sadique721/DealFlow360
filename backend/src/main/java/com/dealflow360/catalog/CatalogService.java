@@ -113,7 +113,7 @@ public class CatalogService {
     // ==========================================
 
     public List<ProductResponse> getAllProductsDto(boolean includeInactive) {
-        List<Product> products = includeInactive ? productRepository.findAll() : productRepository.findByActiveTrue();
+        List<Product> products = includeInactive ? productRepository.findAllWithCategory() : productRepository.findByActiveTrue();
         return products.stream()
                 .map(this::mapToProductResponse)
                 .collect(Collectors.toList());
@@ -124,7 +124,7 @@ public class CatalogService {
     }
 
     public Product getProductById(Long id) {
-        return productRepository.findById(id)
+        return productRepository.findByIdWithCategory(id)
                 .orElseThrow(() -> new RuntimeException("Product not found: " + id));
     }
 

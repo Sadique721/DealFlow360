@@ -14,7 +14,7 @@ import {
   LineItemRequest,
   UpsellSuggestion
 } from '../models/dealflow.model';
-import { Subscription } from 'rxjs';
+import { Subscription, forkJoin } from 'rxjs';
 
 @Component({
   selector: 'app-quote-builder',
@@ -86,11 +86,12 @@ import { Subscription } from 'rxjs';
             <!-- Save Draft Button -->
             <button
               *ngIf="isEditable && currentRole !== 'CUSTOMER'"
-              class="btn btn-outline btn-sm"
+              class="btn btn-success btn-sm"
               (click)="saveDraft()"
               [disabled]="isSaving || (!isCreateMode && lines.length === 0)"
+              style="font-weight: 700; box-shadow: 0 0 14px rgba(0, 223, 162, 0.4);"
             >
-              {{ isSaving ? 'Saving...' : 'Save Draft 💾' }}
+              {{ isSaving ? 'Saving...' : (isCreateMode ? '💾 Save & Create Quotation' : '💾 Save Draft') }}
             </button>
 
             <!-- Submit for Approval Button -->
@@ -381,6 +382,36 @@ import { Subscription } from 'rxjs';
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Bottom Primary Action Console -->
+            <div class="glass-panel action-console-panel" *ngIf="isEditable && currentRole !== 'CUSTOMER'">
+              <div class="console-left">
+                <span class="badge badge-info">{{ isCreateMode ? 'Draft Mode' : (quote?.status || 'Draft') }}</span>
+                <span class="console-summary">
+                  <strong>{{ lines.length }}</strong> Line Item(s) | Subtotal: <strong class="mono">{{ formatCurrency(currentSubtotal) }}</strong> | Net Total: <strong class="mono total-amount">{{ formatCurrency(currentTotalAmount) }}</strong> | Margin: <strong class="mono" [style.color]="getMarginColor(currentMargin)">{{ currentMargin | number:'1.1-1' }}%</strong>
+                </span>
+              </div>
+              <div class="console-right">
+                <button
+                  class="btn btn-success"
+                  (click)="saveDraft()"
+                  [disabled]="isSaving || (!isCreateMode && lines.length === 0)"
+                  style="padding: 10px 22px; font-weight: 700; font-size: 14px; box-shadow: 0 0 16px rgba(0, 223, 162, 0.35);"
+                >
+                  <span *ngIf="isSaving">⏳ Saving Draft...</span>
+                  <span *ngIf="!isSaving">{{ isCreateMode ? '💾 Create & Save Quotation' : '💾 Save Quotation Draft' }}</span>
+                </button>
+                <button
+                  *ngIf="!isCreateMode && quote && (quote.status === 'DRAFT' || quote.status === 'UNDER_NEGOTIATION' || quote.status === 'RETURNED')"
+                  class="btn btn-primary"
+                  (click)="submitForApproval()"
+                  [disabled]="isSubmitting || lines.length === 0"
+                  style="padding: 10px 22px; font-weight: 700; font-size: 14px;"
+                >
+                  {{ isSubmitting ? 'Submitting...' : 'Submit for Approval 🚀' }}
+                </button>
               </div>
             </div>
           </div>
@@ -937,6 +968,34 @@ import { Subscription } from 'rxjs';
       color: #00f2fe;
     }
     .font-xs { font-size: 11px; }
+
+    /* Action Console Panel */
+    .action-console-panel {
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      background: linear-gradient(135deg, rgba(13, 20, 36, 0.85) 0%, rgba(20, 30, 55, 0.75) 100%);
+      border-radius: var(--radius-md);
+    }
+    .console-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .console-summary {
+      font-size: 13px;
+      color: var(--text-sub);
+    }
+    .console-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
   `]
 })
 export class QuoteBuilderComponent implements OnInit, OnDestroy {
@@ -1023,32 +1082,25 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
   }
 
   loadCatalogMasterData(): void {
-    this.catalogService.getCustomers().subscribe({
-      next: (custs) => {
-        this.availableCustomers = custs || [];
+    forkJoin({
+      customers: this.catalogService.getCustomers(),
+      priceLists: this.catalogService.getPriceLists(),
+      products: this.catalogService.getProducts()
+    }).subscribe({
+      next: ({ customers, priceLists, products }) => {
+        this.availableCustomers = customers || [];
+        this.availablePriceLists = priceLists || [];
+        this.availableProducts = products || [];
+
         if (this.isCreateMode && this.availableCustomers.length > 0 && !this.selectedCustomerId) {
           this.selectedCustomerId = this.availableCustomers[0].id;
           this.onCustomerSelected();
         }
-      },
-      error: (err) => console.error('Error fetching customers', err)
-    });
-
-    this.catalogService.getPriceLists().subscribe({
-      next: (pls) => {
-        this.availablePriceLists = pls || [];
         if (this.availablePriceLists.length > 0 && !this.selectedPriceListId) {
           this.selectedPriceListId = this.availablePriceLists[0].id;
         }
       },
-      error: (err) => console.error('Error fetching price lists', err)
-    });
-
-    this.catalogService.getProducts().subscribe({
-      next: (prods) => {
-        this.availableProducts = prods || [];
-      },
-      error: (err) => console.error('Error fetching products', err)
+      error: (err) => console.error('Error fetching master data in parallel', err)
     });
   }
 
