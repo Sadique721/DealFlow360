@@ -3,6 +3,7 @@ package com.dealflow360.subscription;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -44,6 +45,41 @@ public class SubscriptionController {
         return ResponseEntity.ok(subscriptionService.listPlans());
     }
 
+    @GetMapping("/plans/{id}")
+    @Operation(summary = "Get subscription plan by ID")
+    public ResponseEntity<SubscriptionPlan> getPlan(@PathVariable Long id) {
+        return ResponseEntity.ok(subscriptionService.getPlanById(id));
+    }
+
+    @PostMapping("/plans")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Create a new subscription plan (Admin only)")
+    public ResponseEntity<SubscriptionPlan> createPlan(@RequestBody SubscriptionPlan plan) {
+        return ResponseEntity.ok(subscriptionService.createPlan(plan));
+    }
+
+    @PutMapping("/plans/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Update a subscription plan (Admin only)")
+    public ResponseEntity<SubscriptionPlan> updatePlan(@PathVariable Long id, @RequestBody SubscriptionPlan plan) {
+        return ResponseEntity.ok(subscriptionService.updatePlan(id, plan));
+    }
+
+    @DeleteMapping("/plans/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Deactivate a subscription plan (Admin only)")
+    public ResponseEntity<Void> deletePlan(@PathVariable Long id) {
+        subscriptionService.deletePlan(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/generate-from-quotation/{quotationId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SALES_MANAGER', 'FINANCE', 'SALES_REP')")
+    @Operation(summary = "Generate recurring subscriptions and milestone billing schedules from an approved quotation")
+    public ResponseEntity<List<Subscription>> generateFromQuotation(@PathVariable Long quotationId) {
+        return ResponseEntity.ok(subscriptionService.generateFromQuotation(quotationId));
+    }
+
     @PostMapping("/{id}/preview-proration")
     @Operation(summary = "Preview day-accurate proration adjustment math before applying modification")
     public ResponseEntity<Map<String, Object>> previewProration(
@@ -54,6 +90,7 @@ public class SubscriptionController {
     }
 
     @PostMapping("/{id}/modify")
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
     @Operation(summary = "Apply mid-cycle subscription modification and generate prorated invoice/credit note")
     public ResponseEntity<Subscription> modifySubscription(
             @PathVariable Long id,
@@ -63,6 +100,7 @@ public class SubscriptionController {
     }
 
     @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
     @Operation(summary = "Cancel subscription and compute partial refund credit note for unused days")
     public ResponseEntity<Subscription> cancelSubscription(
             @PathVariable Long id,

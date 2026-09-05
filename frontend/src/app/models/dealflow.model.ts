@@ -400,19 +400,73 @@ export interface UpsellSuggestion {
 
 export interface SubscriptionContract {
   id: number;
-  contractNumber: string;
-  customerName: string;
-  customerTier: string;
+  contractNumber?: string;
+  customer?: Customer;
+  customerName?: string;
+  customerTier?: string;
+  quotation?: Quotation;
+  quotationLineId?: number;
   planName: string;
-  billingFrequency: 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
-  seatsCount: number;
-  unitSeatPrice: number;
-  monthlyRecurringRevenue: number;
-  annualContractValue: number;
+  cycle?: 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | string;
+  billingFrequency?: 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | string;
+  quantity?: number;
+  seatsCount?: number;
+  amount?: number;
+  unitSeatPrice?: number;
+  monthlyRecurringRevenue?: number;
+  annualContractValue?: number;
   startDate: string;
-  nextRenewalDate: string;
-  status: 'ACTIVE' | 'PENDING_PRORATION' | 'RENEWING' | 'IN_GRACE' | 'CANCELLED';
-  prorationAmountAvailable: number;
+  nextBillDate?: string;
+  nextRenewalDate?: string;
+  status: 'ACTIVE' | 'PENDING_PRORATION' | 'RENEWING' | 'IN_GRACE' | 'CANCELED' | 'CANCELLED' | string;
+  prorationAmountAvailable?: number;
   creditNoteId?: string;
+  schedules?: BillingSchedule[];
+}
+
+export interface SubscriptionPlan {
+  id?: number;
+  name: string;
+  billingCycle: 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | string;
+  basePrice: number;
+  defaultProrationRule?: string;
+  cancellationRule?: string;
+  active?: boolean;
+}
+
+export interface BillingSchedule {
+  id?: number;
+  subscriptionId?: number;
+  quotationLineId?: number;
+  billingDate: string;
+  amount: number;
+  status: 'PENDING' | 'INVOICED' | 'PAID' | string;
+  prorationFactor?: number;
+  prorationNote?: string;
+  invoiceId?: number;
+}
+
+export interface ProrationPreview {
+  subscriptionId: number;
+  oldQuantity: number;
+  newQuantity: number;
+  quantityDelta: number;
+  daysRemaining: number;
+  totalCycleDays: number;
+  prorationFactor: number;
+  adjustmentAmount: number;
+  isCreditNote: boolean;
+  explanation: string;
+}
+
+export interface BillingOverview {
+  quotationId: number;
+  quoteNumber: string;
+  totalAmount: number;
+  oneTimeTotal: number;
+  recurringTotal: number;
+  oneTimeLines: QuotationLine[];
+  recurringLines: QuotationLine[];
+  subscriptions?: SubscriptionContract[];
 }
 

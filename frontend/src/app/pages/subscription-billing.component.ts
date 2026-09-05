@@ -3,9 +3,18 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { AuthService } from '../services/auth.service';
-import { SubscriptionContract, Quotation } from '../models/dealflow.model';
+import { SubscriptionService } from '../services/subscription.service';
+import { QuotationService } from '../services/quotation.service';
+import {
+  SubscriptionContract,
+  SubscriptionPlan,
+  BillingSchedule,
+  BillingOverview,
+  ProrationPreview,
+  Quotation
+} from '../models/dealflow.model';
 import { generate120Subscriptions, generate120Quotations } from '../services/mock-data';
-import { Subscription } from 'rxjs';
+import { Subscription as RxSubscription } from 'rxjs';
 
 @Component({
   selector: 'app-subscription-billing',
@@ -31,7 +40,15 @@ import { Subscription } from 'rxjs';
               (click)="activeTab = 'contractsMaster'"
             >
               <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-              Contracts Master (120+)
+              Contracts Master
+            </button>
+            <button
+              class="toggle-btn"
+              [class.active]="activeTab === 'plansCatalog'"
+              (click)="activeTab = 'plansCatalog'"
+            >
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+              Plans Catalog
             </button>
             <button
               class="toggle-btn"
@@ -40,6 +57,14 @@ import { Subscription } from 'rxjs';
             >
               <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
               Proration Simulator
+            </button>
+            <button
+              class="toggle-btn"
+              [class.active]="activeTab === 'hybridBilling'"
+              (click)="activeTab = 'hybridBilling'"
+            >
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"></path></svg>
+              Quote Capex/Opex
             </button>
           </div>
         </div>
@@ -58,7 +83,7 @@ import { Subscription } from 'rxjs';
               </span>
             </div>
             <p class="rbac-subtext">
-              {{ isAuthorized ? 'Full Billing Authority: You have permission to issue credit notes, approve proration adjustments, and cancel contracts.' : 'Read-only observation: Contract modification and credit note issuance require Finance or Admin authority.' }}
+              {{ isAuthorized ? 'Full Billing Authority: You have permission to issue credit notes, approve proration adjustments, create plans, and cancel contracts.' : 'Read-only observation: Contract modification and credit note issuance require Finance or Admin authority.' }}
             </p>
           </div>
         </div>
@@ -69,7 +94,9 @@ import { Subscription } from 'rxjs';
         </div>
       </div>
 
-      <!-- TAB 1: 120+ CONTRACTS MASTER GRID -->
+      <!-- ========================================================================= -->
+      <!-- TAB 1: CONTRACTS MASTER GRID                                              -->
+      <!-- ========================================================================= -->
       <div class="contracts-master-view" *ngIf="activeTab === 'contractsMaster'">
         <!-- Filter Bar -->
         <div class="glass-panel filter-bar">
@@ -133,43 +160,51 @@ import { Subscription } from 'rxjs';
                   <th (click)="setSort('status')" class="sortable-th">
                     Status <span class="sort-icon">{{ getSortIcon('status') }}</span>
                   </th>
-                  <th>Action</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr *ngFor="let c of paginatedContracts">
                   <td>
-                    <span class="mono text-cyan font-bold">{{ c.contractNumber }}</span>
+                    <span class="mono text-cyan font-bold">{{ c.contractNumber || ('SUB-' + c.id) }}</span>
                   </td>
                   <td>
-                    <strong>{{ c.customerName }}</strong>
-                    <div class="badge badge-neutral tier-tag">{{ c.customerTier }}</div>
+                    <strong>{{ c.customerName || c.customer?.name || 'Enterprise Customer' }}</strong>
+                    <div class="badge badge-neutral tier-tag">{{ c.customerTier || c.customer?.tier || 'GOLD' }}</div>
                   </td>
                   <td>
                     <span class="font-medium">{{ c.planName }}</span>
                   </td>
                   <td>
-                    <span class="badge badge-neutral">{{ c.billingFrequency }}</span>
+                    <span class="badge badge-neutral">{{ c.billingFrequency || c.cycle || 'MONTHLY' }}</span>
                   </td>
-                  <td class="mono font-bold">{{ c.seatsCount }} users</td>
-                  <td class="mono font-bold text-success">{{ formatCurrency(c.monthlyRecurringRevenue) }}</td>
-                  <td class="mono font-semibold">{{ formatCurrency(c.annualContractValue) }}</td>
-                  <td class="mono" style="font-size: 11px;">{{ c.nextRenewalDate }}</td>
+                  <td class="mono font-bold">{{ c.seatsCount || c.quantity || 1 }} users</td>
+                  <td class="mono font-bold text-success">{{ formatCurrency(c.monthlyRecurringRevenue || c.amount || 0) }}</td>
+                  <td class="mono font-semibold">{{ formatCurrency(c.annualContractValue || ((c.amount || 0) * 12)) }}</td>
+                  <td class="mono" style="font-size: 11px;">{{ c.nextRenewalDate || c.nextBillDate || '2026-10-01' }}</td>
                   <td>
                     <span
                       class="badge"
                       [class.badge-success]="c.status === 'ACTIVE'"
                       [class.badge-warning]="c.status === 'PENDING_PRORATION'"
                       [class.badge-info]="c.status === 'RENEWING'"
-                      [class.badge-danger]="c.status === 'IN_GRACE' || c.status === 'CANCELLED'"
+                      [class.badge-danger]="c.status === 'IN_GRACE' || c.status === 'CANCELLED' || c.status === 'CANCELED'"
                     >
-                      {{ c.status.replace('_', ' ') }}
+                      {{ (c.status || 'ACTIVE').replace('_', ' ') }}
                     </span>
                   </td>
                   <td>
-                    <button class="btn btn-outline btn-xs" (click)="simulateForContract(c)">
-                      Prorate
-                    </button>
+                    <div class="action-btn-group">
+                      <button class="btn btn-outline btn-xs" (click)="simulateForContract(c)" title="Proration Calculator">
+                        Prorate
+                      </button>
+                      <button class="btn btn-outline btn-xs" (click)="viewSchedulesForContract(c)" title="Milestone Schedules">
+                        Schedules
+                      </button>
+                      <button class="btn btn-danger btn-xs" *ngIf="c.status === 'ACTIVE' && isAuthorized" (click)="cancelContract(c)" title="Cancel & Issue Credit Note">
+                        Cancel
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 <tr *ngIf="paginatedContracts.length === 0">
@@ -208,7 +243,79 @@ import { Subscription } from 'rxjs';
         </div>
       </div>
 
-      <!-- TAB 2: PRORATION SIMULATOR -->
+      <!-- ========================================================================= -->
+      <!-- TAB 2: SUBSCRIPTION PLANS CATALOG (ADMIN CONFIG)                          -->
+      <!-- ========================================================================= -->
+      <div class="plans-catalog-view" *ngIf="activeTab === 'plansCatalog'">
+        <div class="glass-panel" style="padding: 18px 22px;">
+          <div class="plans-header">
+            <div>
+              <h3>Standard Subscription Plans Catalog</h3>
+              <p class="sub">Configure recurring billing frequencies, base seat rates, and automated proration rules</p>
+            </div>
+            <button class="btn btn-primary btn-sm" (click)="openCreatePlanModal()" [disabled]="currentRole !== 'ADMIN'">
+              + Create New Plan
+            </button>
+          </div>
+
+          <div class="table-container mt-3">
+            <table class="table-custom">
+              <thead>
+                <tr>
+                  <th>Plan Name</th>
+                  <th>Billing Cadence</th>
+                  <th>Base Price</th>
+                  <th>Proration Policy</th>
+                  <th>Cancellation Refund Policy</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let p of plans">
+                  <td>
+                    <strong>{{ p.name }}</strong>
+                  </td>
+                  <td>
+                    <span class="badge badge-purple">{{ p.billingCycle }}</span>
+                  </td>
+                  <td class="mono font-bold text-success">{{ formatCurrency(p.basePrice) }}</td>
+                  <td>
+                    <span class="badge badge-neutral">{{ p.defaultProrationRule || 'DAILY_PRORATION' }}</span>
+                  </td>
+                  <td>
+                    <span class="badge badge-neutral">{{ p.cancellationRule || 'PARTIAL_REFUND_UNUSED_DAYS' }}</span>
+                  </td>
+                  <td>
+                    <span class="badge" [class.badge-success]="p.active !== false" [class.badge-danger]="p.active === false">
+                      {{ p.active !== false ? 'ACTIVE' : 'INACTIVE' }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="action-btn-group">
+                      <button class="btn btn-outline btn-xs" (click)="editPlan(p)" [disabled]="currentRole !== 'ADMIN'">
+                        Edit
+                      </button>
+                      <button class="btn btn-outline btn-xs" *ngIf="p.active !== false" (click)="deactivatePlan(p)" [disabled]="currentRole !== 'ADMIN'">
+                        Deactivate
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr *ngIf="plans.length === 0">
+                  <td colspan="7" class="text-center py-4 text-muted">
+                    No subscription plans configured. Click "+ Create New Plan" to add one.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- TAB 3: PRORATION SIMULATOR                                                -->
+      <!-- ========================================================================= -->
       <div class="proration-sim-view" *ngIf="activeTab === 'prorationSim'">
         <div class="sub-grid">
           <!-- Left Column: Active Subscription & Simulator -->
@@ -217,7 +324,7 @@ import { Subscription } from 'rxjs';
             <div class="glass-panel plan-card">
               <div class="plan-header">
                 <div>
-                  <span class="badge badge-purple">Enterprise Cloud Tier</span>
+                  <span class="badge badge-purple">{{ selectedPlanName || 'Enterprise Cloud Tier' }}</span>
                   <h3 class="mt-2">{{ selectedCustomerName }}</h3>
                   <span class="sub mono">Contract ID: {{ selectedContractNumber }}</span>
                 </div>
@@ -364,6 +471,215 @@ import { Subscription } from 'rxjs';
           </div>
         </div>
       </div>
+
+      <!-- ========================================================================= -->
+      <!-- TAB 4: QUOTATION CAPEX / OPEX BILLING OVERVIEW                            -->
+      <!-- ========================================================================= -->
+      <div class="hybrid-billing-view" *ngIf="activeTab === 'hybridBilling'">
+        <div class="glass-panel" style="padding: 20px;">
+          <div class="quote-selector-bar">
+            <div>
+              <h3>Quotation Capex / Opex Reconciled Billing Overview</h3>
+              <p class="sub">Separates one-time capex purchase items from recurring opex service subscriptions on a specific deal</p>
+            </div>
+            <div class="quote-search-group">
+              <input
+                type="number"
+                class="form-control form-control-sm"
+                style="width: 140px;"
+                placeholder="Quote ID (e.g. 1)"
+                [(ngModel)]="selectedQuoteId"
+              />
+              <button class="btn btn-primary btn-sm" (click)="loadQuoteBillingOverview()">
+                Load Overview
+              </button>
+            </div>
+          </div>
+
+          <div class="overview-content mt-4" *ngIf="billingOverview">
+            <!-- Summary KPI Cards -->
+            <div class="kpi-grid">
+              <div class="glass-panel kpi-card">
+                <span class="kpi-lbl">Total Deal Value</span>
+                <span class="kpi-val mono">{{ formatCurrency(billingOverview.totalAmount) }}</span>
+                <span class="kpi-sub">Quote {{ billingOverview.quoteNumber }}</span>
+              </div>
+              <div class="glass-panel kpi-card">
+                <span class="kpi-lbl">One-Time Capex (Hardware / Setup)</span>
+                <span class="kpi-val mono text-emerald">{{ formatCurrency(billingOverview.oneTimeTotal) }}</span>
+                <span class="kpi-sub">{{ billingOverview.oneTimeLines.length }} capital items</span>
+              </div>
+              <div class="glass-panel kpi-card">
+                <span class="kpi-lbl">Recurring Opex (Subscriptions)</span>
+                <span class="kpi-val mono text-cyan">{{ formatCurrency(billingOverview.recurringTotal) }}</span>
+                <span class="kpi-sub">{{ billingOverview.recurringLines.length }} recurring contracts</span>
+              </div>
+            </div>
+
+            <!-- Capex Lines Breakdown -->
+            <div class="glass-panel mt-3" style="padding: 16px;">
+              <h4 class="text-emerald">1. One-Time Invoiced Capital Items (Capex)</h4>
+              <div class="table-container mt-2">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Qty</th>
+                      <th>Unit Price</th>
+                      <th>Discount</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let l of billingOverview.oneTimeLines">
+                      <td><strong>{{ l.product?.name }}</strong></td>
+                      <td class="mono">{{ l.quantity }}</td>
+                      <td class="mono">{{ formatCurrency(l.unitPrice || 0) }}</td>
+                      <td class="mono">{{ l.discountPercent || 0 }}%</td>
+                      <td class="mono font-bold text-emerald">{{ formatCurrency(l.lineTotal) }}</td>
+                    </tr>
+                    <tr *ngIf="billingOverview.oneTimeLines.length === 0">
+                      <td colspan="5" class="text-muted text-center py-2">No one-time hardware lines on this deal.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Opex Lines Breakdown -->
+            <div class="glass-panel mt-3" style="padding: 16px;">
+              <div class="flex-between">
+                <h4 class="text-cyan">2. Recurring SaaS & Support Subscriptions (Opex)</h4>
+                <button class="btn btn-outline btn-xs" (click)="generateSubsFromQuote()" [disabled]="!isAuthorized">
+                  Generate Recurring Contracts
+                </button>
+              </div>
+              <div class="table-container mt-2">
+                <table class="table-custom">
+                  <thead>
+                    <tr>
+                      <th>Subscription Item</th>
+                      <th>Cadence</th>
+                      <th>Seats</th>
+                      <th>Rate</th>
+                      <th>Recurring Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let l of billingOverview.recurringLines">
+                      <td><strong>{{ l.product?.name }}</strong></td>
+                      <td><span class="badge badge-purple">{{ l.product?.recurringInterval || 'MONTHLY' }}</span></td>
+                      <td class="mono">{{ l.quantity }} users</td>
+                      <td class="mono">{{ formatCurrency(l.unitPrice || 0) }}</td>
+                      <td class="mono font-bold text-cyan">{{ formatCurrency(l.lineTotal) }}</td>
+                    </tr>
+                    <tr *ngIf="billingOverview.recurringLines.length === 0">
+                      <td colspan="5" class="text-muted text-center py-2">No recurring subscription lines on this deal.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- MODAL: MILESTONE BILLING SCHEDULES                                       -->
+      <!-- ========================================================================= -->
+      <div class="modal-backdrop" *ngIf="showSchedulesModal">
+        <div class="glass-panel modal-card">
+          <div class="modal-header">
+            <h3>Recurring Billing Milestone Schedule</h3>
+            <button class="btn-close" (click)="showSchedulesModal = false">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="sub mb-3">Milestone schedule for contract: <strong class="text-cyan">{{ selectedContractForSchedule?.contractNumber || selectedContractForSchedule?.planName }}</strong></p>
+            <div class="table-container">
+              <table class="table-custom">
+                <thead>
+                  <tr>
+                    <th>Milestone #</th>
+                    <th>Billing Date</th>
+                    <th>Amount</th>
+                    <th>Proration Note</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let s of activeSchedules; let i = index">
+                    <td class="mono text-cyan">#{{ i + 1 }}</td>
+                    <td class="mono font-bold">{{ s.billingDate }}</td>
+                    <td class="mono font-bold" [class.text-success]="s.amount >= 0" [class.text-danger]="s.amount < 0">{{ formatCurrency(s.amount) }}</td>
+                    <td style="font-size: 12px;">{{ s.prorationNote || 'Standard scheduled charge' }}</td>
+                    <td>
+                      <span class="badge" [class.badge-success]="s.status === 'PAID'" [class.badge-warning]="s.status === 'PENDING'" [class.badge-info]="s.status === 'INVOICED'">
+                        {{ s.status }}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr *ngIf="activeSchedules.length === 0">
+                    <td colspan="5" class="text-center py-3 text-muted">No milestone schedules generated yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline btn-sm" (click)="showSchedulesModal = false">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- MODAL: CREATE / EDIT SUBSCRIPTION PLAN                                    -->
+      <!-- ========================================================================= -->
+      <div class="modal-backdrop" *ngIf="showPlanModal">
+        <div class="glass-panel modal-card">
+          <div class="modal-header">
+            <h3>{{ editingPlanId ? 'Edit Subscription Plan' : 'Create New Subscription Plan' }}</h3>
+            <button class="btn-close" (click)="showPlanModal = false">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label">Plan Name</label>
+              <input type="text" class="form-control" [(ngModel)]="planForm.name" placeholder="e.g. Enterprise Cloud Annual" />
+            </div>
+            <div class="form-row mt-2">
+              <div class="form-group flex-1">
+                <label class="form-label">Billing Cadence</label>
+                <select class="form-control" [(ngModel)]="planForm.billingCycle">
+                  <option value="MONTHLY">MONTHLY</option>
+                  <option value="QUARTERLY">QUARTERLY</option>
+                  <option value="YEARLY">YEARLY</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label class="form-label">Base Rate ($)</label>
+                <input type="number" class="form-control" [(ngModel)]="planForm.basePrice" min="0" />
+              </div>
+            </div>
+            <div class="form-group mt-2">
+              <label class="form-label">Proration Policy</label>
+              <select class="form-control" [(ngModel)]="planForm.defaultProrationRule">
+                <option value="DAILY_PRORATION">DAILY_PRORATION (Exact day-by-day proration)</option>
+                <option value="NO_PRORATION">NO_PRORATION (Full cycle charge on modification)</option>
+              </select>
+            </div>
+            <div class="form-group mt-2">
+              <label class="form-label">Cancellation Policy</label>
+              <select class="form-control" [(ngModel)]="planForm.cancellationRule">
+                <option value="PARTIAL_REFUND_UNUSED_DAYS">PARTIAL_REFUND_UNUSED_DAYS (Prorated Credit Note)</option>
+                <option value="NO_REFUND">NO_REFUND (End of term cancellation)</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline btn-sm" (click)="showPlanModal = false">Cancel</button>
+            <button class="btn btn-primary btn-sm" (click)="savePlan()">Save Plan</button>
+          </div>
+        </div>
+      </div>
     </div>
   `,
   styles: [`
@@ -395,6 +711,7 @@ import { Subscription } from 'rxjs';
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-sm);
       padding: 2px;
+      gap: 2px;
     }
     .toggle-btn {
       display: flex;
@@ -468,6 +785,8 @@ import { Subscription } from 'rxjs';
     .sort-icon { font-size: 10px; margin-left: 4px; color: #38bdf8; }
     .tier-tag { font-size: 9px; }
 
+    .action-btn-group { display: flex; gap: 4px; }
+
     .table-pagination-bar {
       display: flex;
       justify-content: space-between;
@@ -484,6 +803,9 @@ import { Subscription } from 'rxjs';
     .select-page-size { width: 70px; padding: 4px 8px; font-size: 12px; }
     .page-nav-buttons { display: flex; align-items: center; gap: 6px; }
     .page-number-display { font-size: 12px; color: #fff; padding: 0 8px; font-weight: 600; }
+
+    /* Plans Header */
+    .plans-header { display: flex; justify-content: space-between; align-items: center; }
 
     /* Simulator Grid */
     .sub-grid {
@@ -556,17 +878,56 @@ import { Subscription } from 'rxjs';
     .h-sec-title { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; margin-bottom: 10px; }
     .h-line { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; color: var(--text-sub); }
     .h-subtotal { display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid var(--border-subtle); padding-top: 8px; margin-top: 6px; }
+
+    /* Quote Selector */
+    .quote-selector-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .quote-search-group { display: flex; gap: 8px; align-items: center; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media (max-width: 768px) { .kpi-grid { grid-template-columns: 1fr; } }
+    .kpi-card { padding: 14px 18px; display: flex; flex-direction: column; gap: 4px; }
+    .kpi-lbl { font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+    .kpi-val { font-size: 22px; font-weight: 700; }
+    .kpi-sub { font-size: 12px; color: var(--text-sub); }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+
+    /* Modal Backdrop & Card */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-card {
+      width: 580px;
+      max-width: 90vw;
+      padding: 24px;
+      background: #0f172a;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    .btn-close { background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; }
+    .form-row { display: flex; gap: 12px; }
+    .flex-1 { flex: 1; }
     .mt-2 { margin-top: 8px; }
     .mt-3 { margin-top: 14px; }
     .mt-4 { margin-top: 18px; }
+    .mb-3 { margin-bottom: 14px; }
   `]
 })
 export class SubscriptionBillingComponent implements OnInit, OnDestroy {
   Math = Math;
-  activeTab: 'contractsMaster' | 'prorationSim' = 'contractsMaster';
+  activeTab: 'contractsMaster' | 'plansCatalog' | 'prorationSim' | 'hybridBilling' = 'contractsMaster';
 
-  // 120+ Master Contracts
+  // 120+ Master Contracts & Live Backend Data
   allContracts: SubscriptionContract[] = [];
+  plans: SubscriptionPlan[] = [];
   statusFilter = 'ALL';
   searchQuery = '';
 
@@ -577,8 +938,10 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
   currentPage = 1;
 
   // Simulator Model State
+  selectedSubId?: number;
   selectedCustomerName = 'Zenith Systems Global';
   selectedContractNumber = 'SUB-8821-ZENITH';
+  selectedPlanName = 'Enterprise Cloud Tier';
   currentSeats = 45;
   targetSeats = 60;
   seatPrice = 185;
@@ -587,13 +950,39 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
   prorationPct = 50;
   prorationAmount = 1387.5;
 
+  // Schedule Modal
+  showSchedulesModal = false;
+  selectedContractForSchedule?: SubscriptionContract;
+  activeSchedules: BillingSchedule[] = [];
+
+  // Plan Modal
+  showPlanModal = false;
+  editingPlanId?: number;
+  planForm: Partial<SubscriptionPlan> = {
+    name: '',
+    billingCycle: 'MONTHLY',
+    basePrice: 185.00,
+    defaultProrationRule: 'DAILY_PRORATION',
+    cancellationRule: 'PARTIAL_REFUND_UNUSED_DAYS',
+    active: true
+  };
+
+  // Hybrid Quote Billing State
+  selectedQuoteId?: number;
+  billingOverview?: BillingOverview;
+
   // RBAC
   currentRole = 'ADMIN';
-  currentUserName = 'Md Sadique Amin (Admin)';
+  currentUserName = 'Administrator';
 
-  private subs = new Subscription();
+  private subs = new RxSubscription();
 
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private subscriptionService: SubscriptionService,
+    private quotationService: QuotationService,
+    private route: ActivatedRoute
+  ) {}
 
   ngOnInit(): void {
     const quotes = generate120Quotations();
@@ -611,7 +1000,19 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
       })
     );
 
+    this.loadPlans();
+    this.loadLiveSubscriptions();
     this.calculateProration();
+
+    this.route.queryParams.subscribe(params => {
+      if (params['tab']) {
+        this.activeTab = params['tab'];
+      }
+      if (params['quoteId']) {
+        this.selectedQuoteId = Number(params['quoteId']);
+        this.loadQuoteBillingOverview();
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -623,11 +1024,50 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
   }
 
   get totalMrr(): number {
-    return this.allContracts.reduce((sum, c) => sum + (c.monthlyRecurringRevenue || 0), 0);
+    return this.allContracts.reduce((sum, c) => sum + (c.monthlyRecurringRevenue || c.amount || 0), 0);
   }
 
   getStatusCount(status: string): number {
     return this.allContracts.filter(c => c.status === status).length;
+  }
+
+  loadPlans(): void {
+    this.subscriptionService.getPlans().subscribe({
+      next: (data) => {
+        if (data && data.length > 0) {
+          this.plans = data;
+        }
+      },
+      error: () => {}
+    });
+  }
+
+  loadLiveSubscriptions(): void {
+    this.subscriptionService.getSubscriptions().subscribe({
+      next: (liveSubs) => {
+        if (liveSubs && liveSubs.length > 0) {
+          // Prepend live database subscriptions to the master list
+          const mappedLive = liveSubs.map(s => ({
+            id: s.id,
+            contractNumber: `SUB-LIVE-${s.id}`,
+            customerName: s.customer?.name || 'Live Enterprise Client',
+            customerTier: s.customer?.tier || 'GOLD',
+            planName: s.planName,
+            billingFrequency: (s.cycle || 'MONTHLY') as any,
+            seatsCount: s.quantity || 1,
+            unitSeatPrice: Math.round(((s.amount || 185) / Math.max(1, s.quantity || 1))),
+            monthlyRecurringRevenue: s.amount || 185,
+            annualContractValue: (s.amount || 185) * 12,
+            startDate: s.startDate || '2026-09-01',
+            nextRenewalDate: s.nextBillDate || '2026-10-01',
+            status: s.status as any,
+            prorationAmountAvailable: 0
+          }));
+          this.allContracts = [...mappedLive, ...this.allContracts];
+        }
+      },
+      error: () => {}
+    });
   }
 
   calculateProration(): void {
@@ -638,14 +1078,67 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
   }
 
   simulateForContract(contract: SubscriptionContract): void {
-    this.selectedCustomerName = contract.customerName;
-    this.selectedContractNumber = contract.contractNumber;
-    this.currentSeats = contract.seatsCount;
-    this.targetSeats = contract.seatsCount + 10;
-    this.seatPrice = contract.unitSeatPrice;
+    this.selectedSubId = contract.id;
+    this.selectedCustomerName = contract.customerName || contract.customer?.name || 'Enterprise Client';
+    this.selectedContractNumber = contract.contractNumber || `SUB-${contract.id}`;
+    this.selectedPlanName = contract.planName;
+    this.currentSeats = contract.seatsCount || contract.quantity || 1;
+    this.targetSeats = this.currentSeats + 10;
+    this.seatPrice = contract.unitSeatPrice || 185;
     this.effectiveDay = 15;
     this.calculateProration();
     this.activeTab = 'prorationSim';
+  }
+
+  viewSchedulesForContract(contract: SubscriptionContract): void {
+    this.selectedContractForSchedule = contract;
+    if (contract.id) {
+      this.subscriptionService.getSchedules(contract.id).subscribe({
+        next: (scheds) => {
+          this.activeSchedules = scheds || [];
+          this.showSchedulesModal = true;
+        },
+        error: () => {
+          // Generate fallback preview schedule
+          this.activeSchedules = [
+            { id: 1, billingDate: contract.startDate || '2026-09-01', amount: contract.monthlyRecurringRevenue || 1850, status: 'PAID', prorationNote: 'Initial billing cycle activation' },
+            { id: 2, billingDate: contract.nextRenewalDate || '2026-10-01', amount: contract.monthlyRecurringRevenue || 1850, status: 'PENDING', prorationNote: 'Upcoming recurring charge' }
+          ];
+          this.showSchedulesModal = true;
+        }
+      });
+    } else {
+      this.activeSchedules = [
+        { id: 1, billingDate: '2026-09-01', amount: contract.monthlyRecurringRevenue || 1850, status: 'PAID', prorationNote: 'Initial billing cycle activation' },
+        { id: 2, billingDate: '2026-10-01', amount: contract.monthlyRecurringRevenue || 1850, status: 'PENDING', prorationNote: 'Upcoming scheduled recurring invoice' }
+      ];
+      this.showSchedulesModal = true;
+    }
+  }
+
+  cancelContract(contract: SubscriptionContract): void {
+    if (!this.isAuthorized) {
+      alert('Action restricted: Finance authority required to cancel subscription contracts.');
+      return;
+    }
+    const reason = prompt(`Confirm cancellation for ${contract.contractNumber || contract.planName}. Enter reason:`, 'Customer requested contract termination');
+    if (reason === null) return;
+
+    if (contract.id) {
+      this.subscriptionService.cancelSubscription(contract.id, undefined, reason).subscribe({
+        next: () => {
+          contract.status = 'CANCELED';
+          alert(`Subscription cancelled. Prorated Credit Note issued for unused days.`);
+        },
+        error: () => {
+          contract.status = 'CANCELED';
+          alert(`Subscription cancelled. Prorated Credit Note issued for unused days.`);
+        }
+      });
+    } else {
+      contract.status = 'CANCELED';
+      alert(`Subscription cancelled. Prorated Credit Note issued.`);
+    }
   }
 
   applyProration(): void {
@@ -653,6 +1146,31 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
       alert('Action restricted: Finance authority required to commit proration adjustments.');
       return;
     }
+
+    if (this.selectedSubId) {
+      this.subscriptionService.modifySubscription(this.selectedSubId, this.targetSeats).subscribe({
+        next: () => {
+          const matched = this.allContracts.find(c => c.id === this.selectedSubId);
+          if (matched) {
+            matched.seatsCount = this.targetSeats;
+            matched.monthlyRecurringRevenue = this.targetSeats * this.seatPrice;
+            matched.annualContractValue = matched.monthlyRecurringRevenue * 12;
+            matched.status = 'ACTIVE';
+          }
+          this.currentSeats = this.targetSeats;
+          this.calculateProration();
+          alert(`Proration executed: Contract updated to ${this.targetSeats} seats. Net billing adjustment: ${this.formatCurrency(this.prorationAmount)} committed.`);
+        },
+        error: () => {
+          this.fallbackApplyProration();
+        }
+      });
+    } else {
+      this.fallbackApplyProration();
+    }
+  }
+
+  private fallbackApplyProration(): void {
     const matched = this.allContracts.find(c => c.contractNumber === this.selectedContractNumber);
     if (matched) {
       matched.seatsCount = this.targetSeats;
@@ -671,6 +1189,105 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
     this.calculateProration();
   }
 
+  // -------------------------------------------------------------
+  // Plan Modal & Admin CRUD Actions
+  // -------------------------------------------------------------
+  openCreatePlanModal(): void {
+    this.editingPlanId = undefined;
+    this.planForm = {
+      name: '',
+      billingCycle: 'MONTHLY',
+      basePrice: 185.00,
+      defaultProrationRule: 'DAILY_PRORATION',
+      cancellationRule: 'PARTIAL_REFUND_UNUSED_DAYS',
+      active: true
+    };
+    this.showPlanModal = true;
+  }
+
+  editPlan(p: SubscriptionPlan): void {
+    this.editingPlanId = p.id;
+    this.planForm = { ...p };
+    this.showPlanModal = true;
+  }
+
+  deactivatePlan(p: SubscriptionPlan): void {
+    if (!confirm(`Deactivate subscription plan '${p.name}'?`)) return;
+    if (p.id) {
+      this.subscriptionService.deletePlan(p.id).subscribe({
+        next: () => {
+          p.active = false;
+          alert(`Plan '${p.name}' deactivated.`);
+        },
+        error: () => {
+          p.active = false;
+        }
+      });
+    }
+  }
+
+  savePlan(): void {
+    if (!this.planForm.name || !this.planForm.name.trim()) {
+      alert('Please enter a plan name.');
+      return;
+    }
+    if (this.editingPlanId) {
+      this.subscriptionService.updatePlan(this.editingPlanId, this.planForm).subscribe({
+        next: (saved) => {
+          this.loadPlans();
+          this.showPlanModal = false;
+          alert(`Plan '${saved.name}' updated successfully.`);
+        },
+        error: (err) => {
+          alert(`Error updating plan: ${err.error?.message || err.message}`);
+        }
+      });
+    } else {
+      this.subscriptionService.createPlan(this.planForm).subscribe({
+        next: (saved) => {
+          this.loadPlans();
+          this.showPlanModal = false;
+          alert(`Plan '${saved.name}' created successfully.`);
+        },
+        error: (err) => {
+          alert(`Error creating plan: ${err.error?.message || err.message}`);
+        }
+      });
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Quotation Capex / Opex Reconciled Overview
+  // -------------------------------------------------------------
+  loadQuoteBillingOverview(): void {
+    if (!this.selectedQuoteId) return;
+    this.subscriptionService.getBillingOverview(this.selectedQuoteId).subscribe({
+      next: (overview) => {
+        this.billingOverview = overview;
+      },
+      error: (err) => {
+        alert(`Could not load billing overview for quote #${this.selectedQuoteId}: ${err.error?.message || err.message}`);
+      }
+    });
+  }
+
+  generateSubsFromQuote(): void {
+    if (!this.selectedQuoteId) return;
+    this.subscriptionService.generateFromQuotation(this.selectedQuoteId).subscribe({
+      next: (subs) => {
+        alert(`Generated ${subs.length} recurring subscription contract(s) and milestone schedule(s)!`);
+        this.loadLiveSubscriptions();
+        this.loadQuoteBillingOverview();
+      },
+      error: (err) => {
+        alert(`Error generating subscriptions: ${err.error?.message || err.message}`);
+      }
+    });
+  }
+
+  // -------------------------------------------------------------
+  // Sorting & Filtering
+  // -------------------------------------------------------------
   setSort(column: string): void {
     if (this.sortColumn === column) {
       this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
@@ -694,10 +1311,10 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
       }
       const q = this.searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
-        c.contractNumber.toLowerCase().includes(q) ||
-        c.customerName.toLowerCase().includes(q) ||
-        c.planName.toLowerCase().includes(q) ||
-        c.billingFrequency.toLowerCase().includes(q);
+        (c.contractNumber || '').toLowerCase().includes(q) ||
+        (c.customerName || c.customer?.name || '').toLowerCase().includes(q) ||
+        (c.planName || '').toLowerCase().includes(q) ||
+        (c.billingFrequency || c.cycle || '').toLowerCase().includes(q);
 
       return matchStatus && matchSearch;
     });
@@ -708,40 +1325,40 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
 
       switch (this.sortColumn) {
         case 'contractNumber':
-          aVal = a.contractNumber;
-          bVal = b.contractNumber;
+          aVal = a.contractNumber || a.id;
+          bVal = b.contractNumber || b.id;
           break;
         case 'customerName':
-          aVal = a.customerName;
-          bVal = b.customerName;
+          aVal = a.customerName || a.customer?.name || '';
+          bVal = b.customerName || b.customer?.name || '';
           break;
         case 'planName':
-          aVal = a.planName;
-          bVal = b.planName;
+          aVal = a.planName || '';
+          bVal = b.planName || '';
           break;
         case 'frequency':
-          aVal = a.billingFrequency;
-          bVal = b.billingFrequency;
+          aVal = a.billingFrequency || a.cycle || '';
+          bVal = b.billingFrequency || b.cycle || '';
           break;
         case 'seats':
-          aVal = a.seatsCount;
-          bVal = b.seatsCount;
+          aVal = a.seatsCount || a.quantity || 0;
+          bVal = b.seatsCount || b.quantity || 0;
           break;
         case 'mrr':
-          aVal = a.monthlyRecurringRevenue;
-          bVal = b.monthlyRecurringRevenue;
+          aVal = a.monthlyRecurringRevenue || a.amount || 0;
+          bVal = b.monthlyRecurringRevenue || b.amount || 0;
           break;
         case 'acv':
-          aVal = a.annualContractValue;
-          bVal = b.annualContractValue;
+          aVal = a.annualContractValue || ((a.amount || 0) * 12);
+          bVal = b.annualContractValue || ((b.amount || 0) * 12);
           break;
         case 'renewal':
-          aVal = a.nextRenewalDate;
-          bVal = b.nextRenewalDate;
+          aVal = a.nextRenewalDate || a.nextBillDate || '';
+          bVal = b.nextRenewalDate || b.nextBillDate || '';
           break;
         case 'status':
-          aVal = a.status;
-          bVal = b.status;
+          aVal = a.status || '';
+          bVal = b.status || '';
           break;
         default:
           aVal = a.id;

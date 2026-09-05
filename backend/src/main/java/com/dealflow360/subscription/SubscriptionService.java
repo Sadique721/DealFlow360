@@ -37,8 +37,95 @@ public class SubscriptionService {
         this.auditService = auditService;
     }
 
+    @jakarta.annotation.PostConstruct
+    public void seedDefaultPlansIfEmpty() {
+        if (subscriptionPlanRepository.count() == 0) {
+            subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                    .name("SaaS Enterprise Core")
+                    .billingCycle("MONTHLY")
+                    .basePrice(BigDecimal.valueOf(185.00))
+                    .defaultProrationRule("DAILY_PRORATION")
+                    .cancellationRule("PARTIAL_REFUND_UNUSED_DAYS")
+                    .active(true)
+                    .build());
+
+            subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                    .name("Cloud Platform Annual")
+                    .billingCycle("YEARLY")
+                    .basePrice(BigDecimal.valueOf(1800.00))
+                    .defaultProrationRule("DAILY_PRORATION")
+                    .cancellationRule("PARTIAL_REFUND_UNUSED_DAYS")
+                    .active(true)
+                    .build());
+
+            subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                    .name("Premier Support Tier")
+                    .billingCycle("QUARTERLY")
+                    .basePrice(BigDecimal.valueOf(450.00))
+                    .defaultProrationRule("DAILY_PRORATION")
+                    .cancellationRule("PARTIAL_REFUND_UNUSED_DAYS")
+                    .active(true)
+                    .build());
+        }
+    }
+
     public List<SubscriptionPlan> listPlans() {
         return subscriptionPlanRepository.findAll();
+    }
+
+    public SubscriptionPlan getPlanById(Long id) {
+        return subscriptionPlanRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Subscription plan not found: " + id));
+    }
+
+    public SubscriptionPlan createPlan(SubscriptionPlan plan) {
+        if (plan.getName() != null && subscriptionPlanRepository.existsByNameIgnoreCase(plan.getName())) {
+            throw new IllegalArgumentException("Subscription plan with name '" + plan.getName() + "' already exists");
+        }
+        if (plan.getActive() == null) {
+            plan.setActive(true);
+        }
+        SubscriptionPlan saved = subscriptionPlanRepository.save(plan);
+        auditService.log("SUBSCRIPTION_PLAN", saved.getId(), "CREATED", "Admin",
+                null, saved.getName(), "Plan created: " + saved.getName() + " (" + saved.getBillingCycle() + ")", saved.getBasePrice());
+        return saved;
+    }
+
+    public SubscriptionPlan updatePlan(Long id, SubscriptionPlan updated) {
+        SubscriptionPlan existing = getPlanById(id);
+        if (updated.getName() != null && !existing.getName().equalsIgnoreCase(updated.getName().trim())) {
+            if (subscriptionPlanRepository.existsByNameIgnoreCase(updated.getName().trim())) {
+                throw new IllegalArgumentException("Subscription plan with name '" + updated.getName() + "' already exists");
+            }
+            existing.setName(updated.getName().trim());
+        }
+        if (updated.getBillingCycle() != null) {
+            existing.setBillingCycle(updated.getBillingCycle());
+        }
+        if (updated.getBasePrice() != null) {
+            existing.setBasePrice(updated.getBasePrice());
+        }
+        if (updated.getDefaultProrationRule() != null) {
+            existing.setDefaultProrationRule(updated.getDefaultProrationRule());
+        }
+        if (updated.getCancellationRule() != null) {
+            existing.setCancellationRule(updated.getCancellationRule());
+        }
+        if (updated.getActive() != null) {
+            existing.setActive(updated.getActive());
+        }
+        SubscriptionPlan saved = subscriptionPlanRepository.save(existing);
+        auditService.log("SUBSCRIPTION_PLAN", saved.getId(), "UPDATED", "Admin",
+                null, saved.getName(), "Plan updated: " + saved.getName(), saved.getBasePrice());
+        return saved;
+    }
+
+    public void deletePlan(Long id) {
+        SubscriptionPlan plan = getPlanById(id);
+        plan.setActive(false);
+        subscriptionPlanRepository.save(plan);
+        auditService.log("SUBSCRIPTION_PLAN", plan.getId(), "DEACTIVATED", "Admin",
+                "ACTIVE", "INACTIVE", "Plan deactivated: " + plan.getName(), BigDecimal.ZERO);
     }
 
     public List<Subscription> listSubscriptions(Long customerId) {
@@ -55,6 +142,17 @@ public class SubscriptionService {
 
     public List<BillingSchedule> getSchedules(Long subscriptionId) {
         return billingScheduleRepository.findBySubscriptionIdOrderByBillingDateAsc(subscriptionId);
+    }
+
+    public List<Subscription> generateFromQuotation(Long quotationId) {
+        Quotation quotation = quotationRepository.findById(quotationId)
+                .orElseThrow(() -> new RuntimeException("Quotation not found: " + quotationId));
+        
+        List<Subscription> existing = subscriptionRepository.findByQuotationId(quotationId);
+        if (!existing.isEmpty()) {
+            return existing;
+        }
+        return createSubscriptionsFromQuotation(quotation);
     }
 
     public List<Subscription> createSubscriptionsFromQuotation(Quotation quotation) {
