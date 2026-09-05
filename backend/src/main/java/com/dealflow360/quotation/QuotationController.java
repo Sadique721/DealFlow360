@@ -1,6 +1,10 @@
 package com.dealflow360.quotation;
 
+import com.dealflow360.approval.ApprovalRequest;
+import com.dealflow360.approval.ApprovalService;
+import com.dealflow360.approval.dto.ApprovalActionRequest;
 import com.dealflow360.auth.AuthUser;
+import com.dealflow360.auth.User;
 import com.dealflow360.discount.RiskCalculationResult;
 import com.dealflow360.quotation.dto.LineItemRequest;
 import com.dealflow360.quotation.dto.QuotationCalculateRequest;
@@ -23,9 +27,11 @@ import java.util.Map;
 public class QuotationController {
 
     private final QuotationService quotationService;
+    private final ApprovalService approvalService;
 
-    public QuotationController(QuotationService quotationService) {
+    public QuotationController(QuotationService quotationService, ApprovalService approvalService) {
         this.quotationService = quotationService;
+        this.approvalService = approvalService;
     }
 
     @GetMapping
@@ -61,6 +67,16 @@ public class QuotationController {
         return ResponseEntity.ok(quotationService.createQuotation(request, email));
     }
 
+    @PutMapping("/{id}")
+    @Operation(summary = "Update quotation lines and recalculate margin & risk score live")
+    public ResponseEntity<Quotation> updateQuotation(
+            @PathVariable Long id,
+            @RequestBody QuotationCreateRequest request,
+            @AuthenticationPrincipal AuthUser authUser) {
+        String changedBy = authUser != null ? authUser.getName() : "Sales Rep";
+        return ResponseEntity.ok(quotationService.updateQuotationLines(id, request.getLines(), changedBy, authUser));
+    }
+
     @PutMapping("/{id}/lines")
     @Operation(summary = "Update quotation line items and recalculate margin & risk score live")
     public ResponseEntity<Quotation> updateLines(
@@ -78,6 +94,18 @@ public class QuotationController {
             @AuthenticationPrincipal AuthUser authUser) {
         String submittedBy = authUser != null ? authUser.getName() : "Sales Rep";
         return ResponseEntity.ok(quotationService.submitForApproval(id, submittedBy, authUser));
+    }
+
+    @PostMapping("/{id}/approval/act")
+    @PreAuthorize("hasAnyRole('ADMIN','SALES_MANAGER','FINANCE')")
+    @Operation(summary = "Execute approval action on a quotation (SALES_MANAGER/FINANCE/ADMIN only)")
+    public ResponseEntity<ApprovalRequest> actOnQuotationApproval(
+            @PathVariable Long id,
+            @RequestBody ApprovalActionRequest request,
+            @AuthenticationPrincipal AuthUser authUser) {
+        request.setQuotationId(id);
+        User approver = authUser != null ? authUser.getUser() : null;
+        return ResponseEntity.ok(approvalService.actOnApproval(request, approver));
     }
 
     @PostMapping("/{id}/confirm")

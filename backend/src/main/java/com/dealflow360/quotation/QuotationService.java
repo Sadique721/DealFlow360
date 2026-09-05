@@ -496,7 +496,10 @@ public class QuotationService {
 
         if (!risk.getRequiresApproval()) {
             // Auto-approved! No manager review needed.
-            approvalRequestRepository.findByQuotationId(quotationId).ifPresent(approvalRequestRepository::delete);
+            approvalRequestRepository.findByQuotationId(quotationId).ifPresent(req -> {
+                approvalRequestRepository.delete(req);
+                approvalRequestRepository.flush();
+            });
             quotation.setStatus("APPROVED");
             quotation.setLastActivityAt(LocalDateTime.now());
             quotationRepository.save(quotation);
@@ -520,19 +523,27 @@ public class QuotationService {
         quotation.setLastActivityAt(LocalDateTime.now());
         quotationRepository.save(quotation);
 
-        // Delete existing approval requests for this quotation if re-routing
-        approvalRequestRepository.findByQuotationId(quotationId).ifPresent(approvalRequestRepository::delete);
-
-        ApprovalRequest request = ApprovalRequest.builder()
-                .quotation(quotation)
-                .status("PENDING")
-                .currentStage("SALES_MANAGER")
-                .blendedRiskScore(risk.getBlendedRiskScore())
-                .riskLevel(risk.getRiskLevel())
-                .explanation(risk.getFullExplanation())
-                .build();
-
-        request = approvalRequestRepository.save(request);
+        Optional<ApprovalRequest> existingReqOpt = approvalRequestRepository.findByQuotationId(quotationId);
+        ApprovalRequest request;
+        if (existingReqOpt.isPresent()) {
+            request = existingReqOpt.get();
+            request.setStatus("PENDING");
+            request.setCurrentStage("SALES_MANAGER");
+            request.setBlendedRiskScore(risk.getBlendedRiskScore());
+            request.setRiskLevel(risk.getRiskLevel());
+            request.setExplanation(risk.getFullExplanation());
+            request.setUpdatedAt(LocalDateTime.now());
+            request.getSteps().clear();
+        } else {
+            request = ApprovalRequest.builder()
+                    .quotation(quotation)
+                    .status("PENDING")
+                    .currentStage("SALES_MANAGER")
+                    .blendedRiskScore(risk.getBlendedRiskScore())
+                    .riskLevel(risk.getRiskLevel())
+                    .explanation(risk.getFullExplanation())
+                    .build();
+        }
 
         // Stage 1: Sales Manager Step
         ApprovalStep managerStep = ApprovalStep.builder()
@@ -544,7 +555,7 @@ public class QuotationService {
                 .assignedAt(LocalDateTime.now())
                 .slaDeadline(LocalDateTime.now().plusHours(2))
                 .build();
-        approvalStepRepository.save(managerStep);
+        request.getSteps().add(managerStep);
 
         // Stage 2: Finance Step (if score > 10 or single line > 8pt)
         if (risk.getRequiresFinance()) {
@@ -557,8 +568,10 @@ public class QuotationService {
                     .assignedAt(LocalDateTime.now())
                     .slaDeadline(LocalDateTime.now().plusHours(4))
                     .build();
-            approvalStepRepository.save(financeStep);
+            request.getSteps().add(financeStep);
         }
+
+        approvalRequestRepository.saveAndFlush(request);
 
         auditService.log("QUOTATION", quotation.getId(), "SUBMITTED", submittedBy,
                 "DRAFT", "PENDING_APPROVAL", risk.getFullExplanation(), BigDecimal.ZERO);

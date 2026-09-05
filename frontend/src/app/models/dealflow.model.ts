@@ -285,24 +285,34 @@ export interface RiskCalculationResult {
 export interface ApprovalStep {
   id: number;
   level: string;
-  approverRole: string;
+  requiredRole?: string;
+  approverRole?: string;
   approver?: User;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'MODIFICATION_REQUESTED';
-  stepOrder: number;
+  approverName?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'RETURNED' | 'MODIFICATION_REQUESTED' | string;
+  stepOrder?: number;
   slaDeadline?: string;
   comments?: string;
+  assignedAt?: string;
+  actedAt?: string;
   decidedAt?: string;
 }
 
 export interface ApprovalRequest {
   id: number;
   quotation: Quotation;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'MODIFICATION_REQUESTED';
-  currentLevel: string;
-  maxLevel: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'RETURNED' | 'MODIFICATION_REQUESTED' | 'AUTO_APPROVED' | string;
+  currentStage?: string;
+  currentLevel?: string;
+  maxLevel?: string;
+  blendedRiskScore?: number;
+  riskLevel?: string;
+  explanation?: string;
   culpritLineBreakdownJson?: string;
   steps: ApprovalStep[];
   requiredTier?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Warehouse {

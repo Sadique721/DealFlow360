@@ -24,6 +24,12 @@ public class AuditController {
         return ResponseEntity.ok(auditService.getLogsForEntity(entityType, entityId));
     }
 
+    @GetMapping
+    @Operation(summary = "Get system-wide audit activity")
+    public ResponseEntity<List<AuditLog>> getAllLogs() {
+        return ResponseEntity.ok(auditService.getRecentLogs());
+    }
+
     @GetMapping("/recent")
     @Operation(summary = "Get recent system-wide audit activity")
     public ResponseEntity<List<AuditLog>> getRecentLogs() {

@@ -50,31 +50,95 @@ public class ApprovalService {
     }
 
     public ApprovalRequest actOnApproval(ApprovalActionRequest request, User approver) {
+        if (request.getQuotationId() == null) {
+            throw new IllegalArgumentException("Quotation ID is required for approval action");
+        }
+
+        if (request.getComments() == null || request.getComments().trim().isEmpty()) {
+            throw new IllegalArgumentException("Decision comments are required for all approval actions.");
+        }
+
+        if (approver == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Unauthorized approver");
+        }
+
+        String approverRole = approver.getRole() != null ? approver.getRole().toUpperCase() : "UNKNOWN";
+        if ("SALES_REP".equals(approverRole) || "CUSTOMER".equals(approverRole)) {
+            throw new org.springframework.security.access.AccessDeniedException("Sales Reps and Customers do not have signing authority.");
+        }
+
         Quotation quotation = quotationRepository.findById(request.getQuotationId())
                 .orElseThrow(() -> new RuntimeException("Quotation not found: " + request.getQuotationId()));
 
         ApprovalRequest approvalRequest = approvalRequestRepository.findByQuotationId(request.getQuotationId())
                 .orElseThrow(() -> new RuntimeException("Approval request not found for quote: " + request.getQuotationId()));
 
-        List<ApprovalStep> steps = approvalStepRepository.findByQuotationIdOrderByAssignedAtAsc(request.getQuotationId());
+        if (!"PENDING".equalsIgnoreCase(approvalRequest.getStatus())) {
+            throw new IllegalStateException("Cannot act on approval request in status: " + approvalRequest.getStatus());
+        }
 
+        List<ApprovalStep> steps = approvalStepRepository.findByQuotationIdOrderByAssignedAtAsc(request.getQuotationId());
+        if (steps.isEmpty()) {
+            throw new IllegalStateException("No approval steps registered for quotation: " + request.getQuotationId());
+        }
+
+        // Determine current target step
         ApprovalStep currentStep = null;
         if (request.getStepId() != null) {
             currentStep = approvalStepRepository.findById(request.getStepId())
                     .orElseThrow(() -> new RuntimeException("Step not found: " + request.getStepId()));
         } else {
-            // Find first pending step
-            currentStep = steps.stream()
-                    .filter(s -> "PENDING".equalsIgnoreCase(s.getStatus()))
-                    .findFirst()
-                    .orElseThrow(() -> new RuntimeException("No pending approval steps found"));
+            // Find active pending step matching role
+            if ("SALES_MANAGER".equals(approverRole)) {
+                currentStep = steps.stream()
+                        .filter(s -> "SALES_MANAGER".equalsIgnoreCase(s.getRequiredRole()) && "PENDING".equalsIgnoreCase(s.getStatus()))
+                        .findFirst()
+                        .orElse(null);
+            } else if ("FINANCE".equals(approverRole)) {
+                currentStep = steps.stream()
+                        .filter(s -> "FINANCE".equalsIgnoreCase(s.getRequiredRole()) && "PENDING".equalsIgnoreCase(s.getStatus()))
+                        .findFirst()
+                        .orElse(null);
+            } else {
+                // ADMIN takes first pending step
+                currentStep = steps.stream()
+                        .filter(s -> "PENDING".equalsIgnoreCase(s.getStatus()))
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            if (currentStep == null) {
+                currentStep = steps.stream()
+                        .filter(s -> "PENDING".equalsIgnoreCase(s.getStatus()))
+                        .findFirst()
+                        .orElseThrow(() -> new RuntimeException("No pending approval steps found"));
+            }
         }
 
-        String action = request.getAction().toUpperCase();
+        // Role authorization check on step
+        if (!"ADMIN".equals(approverRole)) {
+            if ("SALES_MANAGER".equals(approverRole) && !"SALES_MANAGER".equalsIgnoreCase(currentStep.getRequiredRole())) {
+                throw new org.springframework.security.access.AccessDeniedException("Sales Managers cannot act on Finance governance steps.");
+            }
+            if ("FINANCE".equals(approverRole) && !"FINANCE".equalsIgnoreCase(currentStep.getRequiredRole())) {
+                throw new org.springframework.security.access.AccessDeniedException("Finance Officers cannot act on Sales Manager governance steps.");
+            }
+        }
+
+        // Enforce strict sequential gating: Finance cannot approve while Sales Manager step is still pending!
+        if ("FINANCE".equalsIgnoreCase(currentStep.getRequiredRole()) || currentStep.getLevel().contains("FINANCE")) {
+            boolean managerStepStillPending = steps.stream()
+                    .anyMatch(s -> "SALES_MANAGER".equalsIgnoreCase(s.getRequiredRole()) && "PENDING".equalsIgnoreCase(s.getStatus()));
+            if (managerStepStillPending) {
+                throw new IllegalStateException("Cannot act on Finance approval step while Sales Manager review is still pending.");
+            }
+        }
+
+        String action = request.getAction() != null ? request.getAction().toUpperCase() : "APPROVE";
         currentStep.setActedAt(LocalDateTime.now());
         currentStep.setApprover(approver);
         currentStep.setApproverName(approver.getName());
-        currentStep.setComments(request.getComments());
+        currentStep.setComments(request.getComments().trim());
 
         if ("APPROVE".equalsIgnoreCase(action)) {
             currentStep.setStatus("APPROVED");
@@ -98,6 +162,7 @@ public class ApprovalService {
                 // All steps completed!
                 approvalRequest.setStatus("APPROVED");
                 approvalRequest.setCurrentStage("COMPLETED");
+                approvalRequest.setUpdatedAt(LocalDateTime.now());
                 approvalRequestRepository.save(approvalRequest);
 
                 quotation.setStatus("APPROVED");
@@ -115,6 +180,7 @@ public class ApprovalService {
 
             approvalRequest.setStatus("REJECTED");
             approvalRequest.setCurrentStage("COMPLETED");
+            approvalRequest.setUpdatedAt(LocalDateTime.now());
             approvalRequestRepository.save(approvalRequest);
 
             quotation.setStatus("REJECTED");
@@ -123,13 +189,14 @@ public class ApprovalService {
 
             auditService.log("APPROVAL", quotation.getId(), "REJECTED", approver.getName(),
                     "PENDING_APPROVAL", "REJECTED",
-                    "Quotation rejected by " + approver.getRole() + ". Reason: " + request.getComments(),
+                    "Quotation rejected by " + approverRole + ". Reason: " + request.getComments(),
                     BigDecimal.ZERO);
-        } else if ("RETURN".equalsIgnoreCase(action)) {
+        } else if ("RETURN".equalsIgnoreCase(action) || "REQUEST_MODIFICATION".equalsIgnoreCase(action)) {
             currentStep.setStatus("RETURNED");
             approvalStepRepository.save(currentStep);
 
             approvalRequest.setStatus("RETURNED");
+            approvalRequest.setUpdatedAt(LocalDateTime.now());
             approvalRequestRepository.save(approvalRequest);
 
             quotation.setStatus("RETURNED");
@@ -140,6 +207,8 @@ public class ApprovalService {
                     "PENDING_APPROVAL", "RETURNED",
                     "Quotation returned to Sales Rep for discount adjustment. Reason: " + request.getComments(),
                     BigDecimal.ZERO);
+        } else {
+            throw new IllegalArgumentException("Unknown approval action: " + action + ". Supported actions: APPROVE, REJECT, RETURN");
         }
 
         // Push real-time event to STOMP broker

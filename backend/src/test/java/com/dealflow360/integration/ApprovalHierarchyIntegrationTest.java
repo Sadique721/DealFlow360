@@ -240,4 +240,75 @@ class ApprovalHierarchyIntegrationTest {
         assertEquals("RETURNED", step1.getStatus());
         assertEquals("RETURNED", quote.getStatus());
     }
+
+    @Test
+    @DisplayName("Sequencing Block: Finance cannot act on Step 2 while Step 1 (Sales Manager) is still PENDING")
+    void testFinanceBlockedWhenManagerStepPending() {
+        Quotation quote = Quotation.builder()
+                .id(42L)
+                .quoteNumber("Q-1042")
+                .status("PENDING_APPROVAL")
+                .build();
+
+        ApprovalStep step1 = ApprovalStep.builder()
+                .id(101L)
+                .quotation(quote)
+                .level("STAGE_1_MANAGER")
+                .requiredRole("SALES_MANAGER")
+                .status("PENDING")
+                .assignedAt(LocalDateTime.now().minusHours(1))
+                .build();
+
+        ApprovalStep step2 = ApprovalStep.builder()
+                .id(102L)
+                .quotation(quote)
+                .level("STAGE_2_FINANCE")
+                .requiredRole("FINANCE")
+                .status("PENDING")
+                .assignedAt(LocalDateTime.now().minusHours(1))
+                .build();
+
+        ApprovalRequest approvalReq = ApprovalRequest.builder()
+                .id(501L)
+                .quotation(quote)
+                .status("PENDING")
+                .currentStage("SALES_MANAGER")
+                .steps(new ArrayList<>(List.of(step1, step2)))
+                .build();
+
+        User finance = User.builder().id(20L).name("David Chen").role("FINANCE").build();
+
+        when(quotationRepository.findById(42L)).thenReturn(Optional.of(quote));
+        when(requestRepository.findByQuotationId(42L)).thenReturn(Optional.of(approvalReq));
+        when(stepRepository.findByQuotationIdOrderByAssignedAtAsc(42L)).thenReturn(new ArrayList<>(List.of(step1, step2)));
+        when(stepRepository.findById(102L)).thenReturn(Optional.of(step2));
+
+        ApprovalActionRequest financeAction = ApprovalActionRequest.builder()
+                .quotationId(42L)
+                .stepId(102L)
+                .action("APPROVE")
+                .comments("Finance premature sign-off attempt")
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> {
+            approvalService.actOnApproval(financeAction, finance);
+        }, "Must throw IllegalStateException when Finance acts before Manager approves Stage 1");
+    }
+
+    @Test
+    @DisplayName("RBAC Security: Sales Rep is denied signing authority (AccessDeniedException)")
+    void testSalesRepDeniedSigningAuthority() {
+        Quotation quote = Quotation.builder().id(42L).status("PENDING_APPROVAL").build();
+        User rep = User.builder().id(2L).name("Jay Rao").role("SALES_REP").build();
+
+        ApprovalActionRequest repAction = ApprovalActionRequest.builder()
+                .quotationId(42L)
+                .action("APPROVE")
+                .comments("Rep approving own quote")
+                .build();
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class, () -> {
+            approvalService.actOnApproval(repAction, rep);
+        }, "Sales Rep must be denied signing authority");
+    }
 }

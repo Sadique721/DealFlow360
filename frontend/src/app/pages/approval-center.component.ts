@@ -720,7 +720,6 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
   // RBAC
   currentRole = 'ADMIN';
   currentUserName = 'Md Sadique Amin (Admin)';
-
   private subs = new Subscription();
 
   constructor(
@@ -731,9 +730,6 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    const quotes = generate120Quotations();
-    this.approvals = generate120Approvals(quotes);
-
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
         this.currentRole = role;
@@ -746,10 +742,34 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
       })
     );
 
+    this.loadApprovals();
+  }
+
+  loadApprovals(): void {
+    const quotes = generate120Quotations();
+    const fallbackApprovals = generate120Approvals(quotes);
+
+    this.approvalService.getPendingRequests().subscribe({
+      next: (data) => {
+        if (data && data.length > 0) {
+          this.approvals = data;
+        } else {
+          this.approvals = fallbackApprovals;
+        }
+        this.initSelectedApproval();
+      },
+      error: () => {
+        this.approvals = fallbackApprovals;
+        this.initSelectedApproval();
+      }
+    });
+  }
+
+  initSelectedApproval(): void {
     const routeId = this.route.snapshot.paramMap.get('id');
     if (routeId && routeId !== 'new') {
       const numericId = parseInt(routeId, 10);
-      const matched = this.approvals.find(a => a.id === numericId || a.quotation.id === numericId);
+      const matched = this.approvals.find(a => a.id === numericId || a.quotation?.id === numericId);
       if (matched) {
         this.selectApproval(matched);
       } else if (this.approvals.length > 0) {
@@ -815,7 +835,7 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
   }
 
   getLevelCount(level: string): number {
-    return this.approvals.filter(a => a.currentLevel === level).length;
+    return this.approvals.filter(a => (a.currentLevel || a.currentStage) === level).length;
   }
 
   setSort(column: string): void {
@@ -837,14 +857,14 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
     const list = this.approvals.filter(a => {
       let matchFilter = true;
       if (this.statusFilter === 'PENDING') matchFilter = a.status === 'PENDING';
-      if (this.statusFilter === 'LEVEL_1') matchFilter = a.currentLevel === 'LEVEL_1_MANAGER';
-      if (this.statusFilter === 'LEVEL_2') matchFilter = a.currentLevel === 'LEVEL_2_FINANCE';
+      if (this.statusFilter === 'LEVEL_1') matchFilter = (a.currentLevel === 'LEVEL_1_MANAGER' || a.currentStage === 'SALES_MANAGER');
+      if (this.statusFilter === 'LEVEL_2') matchFilter = (a.currentLevel === 'LEVEL_2_FINANCE' || a.currentStage === 'FINANCE');
 
       const q = this.searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
-        a.quotation.quoteNumber.toLowerCase().includes(q) ||
-        a.quotation.customer.name.toLowerCase().includes(q) ||
-        a.quotation.salesRep.name.toLowerCase().includes(q);
+        a.quotation?.quoteNumber?.toLowerCase().includes(q) ||
+        a.quotation?.customer?.name?.toLowerCase().includes(q) ||
+        a.quotation?.salesRep?.name?.toLowerCase().includes(q);
 
       return matchFilter && matchSearch;
     });
@@ -855,40 +875,40 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
 
       switch (this.sortColumn) {
         case 'quoteNumber':
-          aVal = a.quotation.quoteNumber;
-          bVal = b.quotation.quoteNumber;
+          aVal = a.quotation?.quoteNumber || '';
+          bVal = b.quotation?.quoteNumber || '';
           break;
         case 'client':
-          aVal = a.quotation.customer.name;
-          bVal = b.quotation.customer.name;
+          aVal = a.quotation?.customer?.name || '';
+          bVal = b.quotation?.customer?.name || '';
           break;
         case 'level':
-          aVal = a.currentLevel;
-          bVal = b.currentLevel;
+          aVal = a.currentLevel || a.currentStage || '';
+          bVal = b.currentLevel || b.currentStage || '';
           break;
         case 'subtotal':
-          aVal = a.quotation.totalAmount;
-          bVal = b.quotation.totalAmount;
+          aVal = a.quotation?.totalAmount || 0;
+          bVal = b.quotation?.totalAmount || 0;
           break;
         case 'discount':
-          aVal = a.quotation.blendedDiscountPct;
-          bVal = b.quotation.blendedDiscountPct;
+          aVal = a.quotation?.blendedDiscountPct || a.quotation?.totalDiscountAmount || 0;
+          bVal = b.quotation?.blendedDiscountPct || b.quotation?.totalDiscountAmount || 0;
           break;
         case 'margin':
-          aVal = a.quotation.marginPct;
-          bVal = b.quotation.marginPct;
+          aVal = a.quotation?.marginPercentage || a.quotation?.marginPct || 0;
+          bVal = b.quotation?.marginPercentage || b.quotation?.marginPct || 0;
           break;
         case 'riskScore':
-          aVal = a.quotation.riskScore;
-          bVal = b.quotation.riskScore;
+          aVal = a.blendedRiskScore || a.quotation?.riskScore || 0;
+          bVal = b.blendedRiskScore || b.quotation?.riskScore || 0;
           break;
         case 'status':
-          aVal = a.status;
-          bVal = b.status;
+          aVal = a.status || '';
+          bVal = b.status || '';
           break;
         default:
-          aVal = a.id;
-          bVal = b.id;
+          aVal = a.id || 0;
+          bVal = b.id || 0;
       }
 
       if (typeof aVal === 'string') {
@@ -932,25 +952,41 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
       return;
     }
 
-    if (action === 'APPROVE') {
-      this.selectedApproval.status = 'APPROVED';
-      this.selectedApproval.quotation.status = 'APPROVED';
-      if (this.selectedApproval.steps && this.selectedApproval.steps[0]) {
-        this.selectedApproval.steps[0].status = 'APPROVED';
-        this.selectedApproval.steps[0].comments = this.decisionComments || 'Approved in accordance with margin risk policy.';
-      }
-      alert(`Quotation ${this.selectedApproval.quotation.quoteNumber} successfully APPROVED by ${this.currentUserName}. Immutable audit entry logged.`);
-    } else if (action === 'REJECT') {
-      this.selectedApproval.status = 'REJECTED';
-      this.selectedApproval.quotation.status = 'REJECTED';
-      if (this.selectedApproval.steps && this.selectedApproval.steps[0]) {
-        this.selectedApproval.steps[0].status = 'REJECTED';
-        this.selectedApproval.steps[0].comments = this.decisionComments || 'Rejected: Margin erosion exceeds acceptable threshold.';
-      }
-      alert(`Quotation ${this.selectedApproval.quotation.quoteNumber} REJECTED.`);
-    } else {
-      alert(`Rebalance requested on ${this.selectedApproval.quotation.quoteNumber}. Returned to representative.`);
+    if (!this.decisionComments || !this.decisionComments.trim()) {
+      alert('Decision comments are required for all governance actions.');
+      return;
     }
+
+    const quoteId = this.selectedApproval.quotation?.id || this.selectedApproval.id;
+    const comments = this.decisionComments.trim();
+
+    this.approvalService.processDecision(quoteId, action, comments).subscribe({
+      next: (res) => {
+        if (action === 'APPROVE') {
+          this.selectedApproval!.status = res?.status || 'APPROVED';
+          if (this.selectedApproval!.quotation) {
+            this.selectedApproval!.quotation.status = res?.status === 'APPROVED' ? 'APPROVED' : 'PENDING_APPROVAL';
+          }
+          alert(`Quotation ${this.selectedApproval!.quotation?.quoteNumber || quoteId} successfully approved! Action logged to immutable audit trail.`);
+        } else if (action === 'REJECT') {
+          this.selectedApproval!.status = 'REJECTED';
+          if (this.selectedApproval!.quotation) {
+            this.selectedApproval!.quotation.status = 'REJECTED';
+          }
+          alert(`Quotation ${this.selectedApproval!.quotation?.quoteNumber || quoteId} REJECTED.`);
+        } else {
+          this.selectedApproval!.status = 'RETURNED';
+          if (this.selectedApproval!.quotation) {
+            this.selectedApproval!.quotation.status = 'RETURNED';
+          }
+          alert(`Quotation ${this.selectedApproval!.quotation?.quoteNumber || quoteId} returned to Sales Representative for margin rebalance.`);
+        }
+        this.loadApprovals();
+      },
+      error: (err) => {
+        alert(`Approval action failed: ${err.error?.message || err.message || 'Server error'}`);
+      }
+    });
   }
 
   formatCurrency(val?: number): string {
