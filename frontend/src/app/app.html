@@ -1,0 +1,83 @@
+﻿<div class="app-shell">
+  <!-- Top Global Navigation Bar -->
+  <header class="app-topbar">
+    <div class="topbar-left">
+      <a routerLink="/pipeline" class="brand-logo">
+        <span class="logo-badge">⚡</span>
+        <span class="brand-name">DealFlow<span class="highlight">360</span></span>
+        <span class="badge badge-purple version-tag">Enterprise Odoo Combat</span>
+      </a>
+
+      <nav class="nav-links">
+        <a routerLink="/pipeline" routerLinkActive="active" class="nav-item">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"></path></svg>
+          Pipeline
+        </a>
+        <a routerLink="/quote/1" routerLinkActive="active" class="nav-item">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          Quotation Builder
+        </a>
+        <a routerLink="/approval/1" routerLinkActive="active" class="nav-item">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          Approval Center
+        </a>
+        <a routerLink="/fulfillment/1" routerLinkActive="active" class="nav-item">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+          Warehouse Split
+        </a>
+        <a routerLink="/deal-health" routerLinkActive="active" class="nav-item">
+          <span class="live-dot"></span>
+          Deal Health Radar
+        </a>
+        <a routerLink="/portal/token-zenith-1042" routerLinkActive="active" class="nav-item portal-nav">
+          Customer Portal ↗
+        </a>
+      </nav>
+    </div>
+
+    <!-- Right: Persona Role Switcher for Hackathon Judges -->
+    <div class="topbar-right">
+      <div class="persona-pill">
+        <span class="persona-label">Persona:</span>
+        <button
+          class="role-btn"
+          [class.active]="currentRole === 'ADMIN'"
+          (click)="switchRole('ADMIN', 'Harsh Malaviya (Admin)')"
+        >
+          Admin
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="currentRole === 'SALES_REP'"
+          (click)="switchRole('SALES_REP', 'Jay Rao (Sales Rep)')"
+        >
+          Rep
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="currentRole === 'SALES_MANAGER'"
+          (click)="switchRole('SALES_MANAGER', 'Anand Joshi (Manager)')"
+        >
+          Manager
+        </button>
+        <button
+          class="role-btn"
+          [class.active]="currentRole === 'FINANCE'"
+          (click)="switchRole('FINANCE', 'Priya Desai (Finance)')"
+        >
+          Finance
+        </button>
+      </div>
+
+      <div class="user-avatar">
+        <span class="avatar-letter">{{ currentUser.charAt(0) }}</span>
+        <span class="user-name">{{ currentUser }}</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Container -->
+  <main class="app-main-content">
+    <router-outlet></router-outlet>
+  </main>
+</div>
