@@ -318,15 +318,35 @@ export interface ApprovalRequest {
 export interface Warehouse {
   id: number;
   name: string;
+  warehouseName?: string;
   code?: string;
+  warehouseCode?: string;
   location?: string;
   locationCity?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | string;
   region?: string;
   baseFreight?: number;
   baseFreightCost?: number;
   shippingCostWeight?: number;
   weightRatePerKg?: number;
   leadTimeDays?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WarehouseStock {
+  id: number;
+  warehouse: Warehouse;
+  warehouseId?: number;
+  product: Product;
+  productId?: number;
+  inStock: number;
+  reserved: number;
+  available: number;
+  reorderLevel: number;
+  stockStatus?: 'NORMAL' | 'LOW STOCK' | 'OUT OF STOCK' | string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface FulfillmentSplit {

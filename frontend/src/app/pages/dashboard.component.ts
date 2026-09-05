@@ -562,7 +562,15 @@ export class DashboardComponent implements OnInit, OnDestroy {
       icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
       roles: ['ADMIN', 'SALES_MANAGER', 'FINANCE']
     },
-    // 6. Fulfillment
+    // 6. Warehouses (Facilities & Live Inventory)
+    {
+      id: 'warehouses',
+      label: 'Warehouses',
+      path: '/dashboard/warehouses',
+      icon: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 21h18M3 7v14M21 7v14M6 21V11m4 10V11m4 10V11M3 7l9-4 9 4"/></svg>`,
+      roles: ['ADMIN', 'SALES_MANAGER', 'FINANCE']
+    },
+    // 7. Fulfillment
     {
       id: 'fulfillment',
       label: 'Fulfillment',

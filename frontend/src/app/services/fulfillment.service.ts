@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
-import { FulfillmentPlan, FulfillmentSplit, Warehouse } from '../models/dealflow.model';
+import { FulfillmentPlan, FulfillmentSplit, Warehouse, WarehouseStock } from '../models/dealflow.model';
 
 @Injectable({
   providedIn: 'root'
@@ -29,6 +29,10 @@ export class FulfillmentService {
     return this.api.get<Warehouse[]>('fulfillments/warehouses');
   }
 
+  getWarehouseById(id: number): Observable<Warehouse> {
+    return this.api.get<Warehouse>(`fulfillments/warehouses/${id}`);
+  }
+
   createWarehouse(warehouse: Partial<Warehouse>): Observable<Warehouse> {
     return this.api.post<Warehouse>('fulfillments/warehouses', warehouse);
   }
@@ -41,9 +45,21 @@ export class FulfillmentService {
     return this.api.delete<void>(`fulfillments/warehouses/${id}`);
   }
 
-  getStocks(warehouseId?: number): Observable<any[]> {
+  getStocks(warehouseId?: number): Observable<WarehouseStock[]> {
     const url = warehouseId ? `fulfillments/stocks?warehouseId=${warehouseId}` : 'fulfillments/stocks';
-    return this.api.get<any[]>(url);
+    return this.api.get<WarehouseStock[]>(url);
+  }
+
+  createInventory(req: { warehouseId: number; productId: number; inStock: number; reserved?: number; reorderLevel?: number }): Observable<WarehouseStock> {
+    return this.api.post<WarehouseStock>('fulfillments/stocks', req);
+  }
+
+  updateInventory(id: number, req: { inStock?: number; reserved?: number; reorderLevel?: number }): Observable<WarehouseStock> {
+    return this.api.put<WarehouseStock>(`fulfillments/stocks/${id}`, req);
+  }
+
+  deleteInventory(id: number): Observable<void> {
+    return this.api.delete<void>(`fulfillments/stocks/${id}`);
   }
 
   setStock(warehouseId: number, productId: number, inStock: number, reorderLevel?: number): Observable<any> {

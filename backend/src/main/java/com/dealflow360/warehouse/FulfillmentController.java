@@ -2,6 +2,8 @@ package com.dealflow360.warehouse;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import com.dealflow360.warehouse.dto.InventoryRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -38,7 +40,7 @@ public class FulfillmentController {
     @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Create a new warehouse (ADMIN only)")
     public ResponseEntity<Warehouse> createWarehouse(@RequestBody Warehouse warehouse) {
-        return ResponseEntity.ok(fulfillmentService.createWarehouse(warehouse));
+        return ResponseEntity.status(HttpStatus.CREATED).body(fulfillmentService.createWarehouse(warehouse));
     }
 
     @PutMapping("/warehouses/{id}")
@@ -63,6 +65,28 @@ public class FulfillmentController {
             return ResponseEntity.ok(fulfillmentService.getWarehouseStocks(warehouseId));
         }
         return ResponseEntity.ok(fulfillmentService.getAllStocks());
+    }
+
+    @PostMapping("/stocks")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Add an inventory item to a warehouse (ADMIN only)")
+    public ResponseEntity<WarehouseStock> createInventory(@RequestBody InventoryRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(fulfillmentService.createInventory(request));
+    }
+
+    @PutMapping("/stocks/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Update an existing inventory item (ADMIN only)")
+    public ResponseEntity<WarehouseStock> updateInventory(@PathVariable Long id, @RequestBody InventoryRequest request) {
+        return ResponseEntity.ok(fulfillmentService.updateInventory(id, request));
+    }
+
+    @DeleteMapping("/stocks/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    @Operation(summary = "Delete an inventory item from a warehouse (ADMIN only)")
+    public ResponseEntity<Void> deleteInventory(@PathVariable Long id) {
+        fulfillmentService.deleteInventory(id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/stocks/set")

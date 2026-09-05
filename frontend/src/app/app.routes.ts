@@ -15,6 +15,7 @@ import { InvoicesComponent } from './pages/invoices.component';
 import { UserManagementComponent } from './pages/user-management.component';
 import { CatalogManagementComponent } from './pages/catalog-management.component';
 import { CustomerManagementComponent } from './pages/customer-management.component';
+import { WarehouseManagementComponent } from './pages/warehouse-management.component';
 import { UnauthorizedComponent } from './pages/unauthorized.component';
 import { authGuard } from './guards/auth.guard';
 import { roleGuard } from './guards/role.guard';
@@ -38,6 +39,7 @@ export const routes: Routes = [
   { path: 'approval/:id', redirectTo: 'dashboard/approval/:id' },
   { path: 'fulfillment', redirectTo: 'dashboard/fulfillment', pathMatch: 'full' },
   { path: 'fulfillment/:id', redirectTo: 'dashboard/fulfillment/:id' },
+  { path: 'warehouses', redirectTo: 'dashboard/warehouses', pathMatch: 'full' },
   { path: 'subscription', redirectTo: 'dashboard/subscription', pathMatch: 'full' },
   { path: 'invoices', redirectTo: 'dashboard/invoices', pathMatch: 'full' },
   { path: 'deal-health', redirectTo: 'dashboard/deal-health', pathMatch: 'full' },
@@ -107,6 +109,30 @@ export const routes: Routes = [
         component: WarehouseSplitComponent,
         canActivate: [roleGuard],
         data: { roles: ['ADMIN', 'SALES_REP', 'SALES_MANAGER', 'FINANCE'], module: 'fulfillment' }
+      },
+      {
+        path: 'warehouses',
+        component: WarehouseManagementComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN', 'SALES_MANAGER', 'FINANCE'], module: 'warehouses' }
+      },
+      {
+        path: 'warehouses/new',
+        component: WarehouseManagementComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN'], module: 'warehouses' }
+      },
+      {
+        path: 'warehouses/:id',
+        component: WarehouseManagementComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN', 'SALES_MANAGER', 'FINANCE'], module: 'warehouses' }
+      },
+      {
+        path: 'warehouses/:id/edit',
+        component: WarehouseManagementComponent,
+        canActivate: [roleGuard],
+        data: { roles: ['ADMIN'], module: 'warehouses' }
       },
       {
         path: 'subscription',

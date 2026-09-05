@@ -6,6 +6,8 @@ import com.dealflow360.quotation.QuotationRepository;
 import com.dealflow360.websocket.WebSocketPublisher;
 import com.dealflow360.catalog.Product;
 import com.dealflow360.catalog.ProductRepository;
+import com.dealflow360.config.ConflictException;
+import com.dealflow360.warehouse.dto.InventoryRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,7 +50,7 @@ public class FulfillmentService {
     }
 
     public List<Warehouse> getAllWarehouses() {
-        return warehouseRepository.findAll();
+        return warehouseRepository.findAllOrderByNewestFirst();
     }
 
     public Optional<Warehouse> getWarehouseById(Long id) {
@@ -59,38 +61,180 @@ public class FulfillmentService {
         if (warehouse.getName() == null || warehouse.getName().trim().isEmpty()) {
             throw new IllegalArgumentException("Warehouse name is required");
         }
+        String cleanName = warehouse.getName().trim();
+        if (warehouseRepository.existsByName(cleanName)) {
+            throw new ConflictException("Warehouse name already exists: " + cleanName);
+        }
+        warehouse.setName(cleanName);
+
+        String code = warehouse.getWarehouseCode();
+        if (code != null && !code.trim().isEmpty()) {
+            code = code.trim().toUpperCase();
+            if (warehouseRepository.existsByWarehouseCode(code)) {
+                throw new ConflictException("Warehouse code already exists: " + code);
+            }
+            warehouse.setWarehouseCode(code);
+        } else {
+            warehouse.setWarehouseCode("WH-" + (System.currentTimeMillis() % 10000));
+        }
+
         if (warehouse.getLocation() == null || warehouse.getLocation().trim().isEmpty()) {
             warehouse.setLocation("General Facility");
+        } else {
+            warehouse.setLocation(warehouse.getLocation().trim());
         }
+
+        if (warehouse.getStatus() == null || warehouse.getStatus().trim().isEmpty()) {
+            warehouse.setStatus("ACTIVE");
+        } else {
+            warehouse.setStatus(warehouse.getStatus().trim().toUpperCase());
+        }
+
         if (warehouse.getBaseFreight() == null) {
             warehouse.setBaseFreight(BigDecimal.valueOf(20.00));
         }
         if (warehouse.getShippingCostWeight() == null) {
             warehouse.setShippingCostWeight(BigDecimal.ONE);
+        } else if (warehouse.getShippingCostWeight().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Shipping cost weight must be greater than 0");
         }
+
         return warehouseRepository.save(warehouse);
     }
 
     public Warehouse updateWarehouse(Long id, Warehouse updated) {
         Warehouse wh = warehouseRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Warehouse not found: " + id));
-        if (updated.getName() != null) wh.setName(updated.getName().trim());
-        if (updated.getLocation() != null) wh.setLocation(updated.getLocation().trim());
-        if (updated.getBaseFreight() != null) wh.setBaseFreight(updated.getBaseFreight());
-        if (updated.getShippingCostWeight() != null) wh.setShippingCostWeight(updated.getShippingCostWeight());
+
+        if (updated.getName() != null && !updated.getName().trim().isEmpty()) {
+            String newName = updated.getName().trim();
+            if (!newName.equalsIgnoreCase(wh.getName()) && warehouseRepository.existsByName(newName)) {
+                throw new ConflictException("Warehouse name already exists: " + newName);
+            }
+            wh.setName(newName);
+        }
+
+        String newCode = updated.getWarehouseCode();
+        if (newCode != null && !newCode.trim().isEmpty()) {
+            newCode = newCode.trim().toUpperCase();
+            if (!newCode.equalsIgnoreCase(wh.getWarehouseCode()) && warehouseRepository.existsByWarehouseCode(newCode)) {
+                throw new ConflictException("Warehouse code already exists: " + newCode);
+            }
+            wh.setWarehouseCode(newCode);
+        }
+
+        if (updated.getLocation() != null && !updated.getLocation().trim().isEmpty()) {
+            wh.setLocation(updated.getLocation().trim());
+        }
+        if (updated.getStatus() != null && !updated.getStatus().trim().isEmpty()) {
+            wh.setStatus(updated.getStatus().trim().toUpperCase());
+        }
+        if (updated.getBaseFreight() != null) {
+            wh.setBaseFreight(updated.getBaseFreight());
+        }
+        if (updated.getShippingCostWeight() != null) {
+            if (updated.getShippingCostWeight().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new IllegalArgumentException("Shipping cost weight must be greater than 0");
+            }
+            wh.setShippingCostWeight(updated.getShippingCostWeight());
+        }
         return warehouseRepository.save(wh);
     }
 
     public void deleteWarehouse(Long id) {
-        warehouseRepository.deleteById(id);
+        Warehouse wh = warehouseRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Warehouse not found: " + id));
+
+        List<WarehouseStock> stocks = warehouseStockRepository.findByWarehouseId(id);
+        int totalReserved = stocks.stream().mapToInt(WarehouseStock::getReserved).sum();
+        if (totalReserved > 0) {
+            throw new ConflictException("Cannot delete warehouse: " + totalReserved + " units are currently reserved for pending orders.");
+        }
+
+        List<FulfillmentSplit> activeSplits = fulfillmentSplitRepository.findByIsBackorderTrueAndStatus("BACKORDERED");
+        boolean hasAllocations = activeSplits.stream().anyMatch(s -> s.getWarehouse() != null && s.getWarehouse().getId().equals(id));
+        if (hasAllocations) {
+            throw new ConflictException("Cannot delete warehouse: Active backorder splits are assigned to this warehouse.");
+        }
+
+        warehouseRepository.delete(wh);
     }
 
     public List<WarehouseStock> getWarehouseStocks(Long warehouseId) {
-        return warehouseStockRepository.findByWarehouseId(warehouseId);
+        return warehouseStockRepository.findByWarehouseIdNewestFirst(warehouseId);
     }
 
     public List<WarehouseStock> getAllStocks() {
         return warehouseStockRepository.findAll();
+    }
+
+    public WarehouseStock createInventory(InventoryRequest req) {
+        if (req.getWarehouseId() == null) {
+            throw new IllegalArgumentException("Warehouse ID is required");
+        }
+        if (req.getProductId() == null) {
+            throw new IllegalArgumentException("Product ID is required");
+        }
+
+        Warehouse wh = warehouseRepository.findById(req.getWarehouseId())
+                .orElseThrow(() -> new RuntimeException("Warehouse not found: " + req.getWarehouseId()));
+        Product prod = productRepository.findById(req.getProductId())
+                .orElseThrow(() -> new RuntimeException("Product not found: " + req.getProductId()));
+
+        if (warehouseStockRepository.existsByWarehouseIdAndProductId(req.getWarehouseId(), req.getProductId())) {
+            throw new ConflictException("Product '" + prod.getName() + "' already exists in warehouse '" + wh.getName() + "'. Use Edit to adjust inventory.");
+        }
+
+        int inStock = req.getInStock() != null ? Math.max(0, req.getInStock()) : 0;
+        int reserved = req.getReserved() != null ? Math.max(0, req.getReserved()) : 0;
+        if (reserved > inStock) {
+            throw new IllegalArgumentException("Reserved quantity (" + reserved + ") cannot exceed in-stock quantity (" + inStock + ")");
+        }
+        int reorderLevel = req.getReorderLevel() != null ? Math.max(0, req.getReorderLevel()) : 10;
+
+        WarehouseStock stock = WarehouseStock.builder()
+                .warehouse(wh)
+                .product(prod)
+                .inStock(inStock)
+                .reserved(reserved)
+                .available(inStock - reserved)
+                .reorderLevel(reorderLevel)
+                .build();
+
+        return warehouseStockRepository.save(stock);
+    }
+
+    public WarehouseStock updateInventory(Long stockId, InventoryRequest req) {
+        WarehouseStock stock = warehouseStockRepository.findById(stockId)
+                .orElseThrow(() -> new RuntimeException("Inventory record not found: " + stockId));
+
+        if (req.getInStock() != null) {
+            stock.setInStock(Math.max(0, req.getInStock()));
+        }
+        if (req.getReserved() != null) {
+            stock.setReserved(Math.max(0, req.getReserved()));
+        }
+        if (stock.getReserved() > stock.getInStock()) {
+            throw new IllegalArgumentException("Reserved quantity (" + stock.getReserved() + ") cannot exceed in-stock quantity (" + stock.getInStock() + ")");
+        }
+        stock.setAvailable(Math.max(0, stock.getInStock() - stock.getReserved()));
+
+        if (req.getReorderLevel() != null) {
+            stock.setReorderLevel(Math.max(0, req.getReorderLevel()));
+        }
+
+        return warehouseStockRepository.save(stock);
+    }
+
+    public void deleteInventory(Long stockId) {
+        WarehouseStock stock = warehouseStockRepository.findById(stockId)
+                .orElseThrow(() -> new RuntimeException("Inventory record not found: " + stockId));
+
+        if (stock.getReserved() != null && stock.getReserved() > 0) {
+            throw new ConflictException("Cannot delete inventory: " + stock.getReserved() + " units are currently reserved for pending orders.");
+        }
+
+        warehouseStockRepository.delete(stock);
     }
 
     public WarehouseStock setStock(Long warehouseId, Long productId, int inStock, Integer reserved, Integer reorderLevel) {
