@@ -9,6 +9,14 @@ import { FulfillmentPlan, FulfillmentSplit, Warehouse, WarehouseStock } from '..
 export class FulfillmentService {
   constructor(private api: ApiService) {}
 
+  getAllPlans(): Observable<FulfillmentPlan[]> {
+    return this.api.get<FulfillmentPlan[]>('fulfillments/plans');
+  }
+
+  getPlanById(planId: number): Observable<FulfillmentPlan> {
+    return this.api.get<FulfillmentPlan>(`fulfillments/plans/${planId}`);
+  }
+
   getPlanForQuotation(quoteId: number): Observable<FulfillmentPlan> {
     return this.api.get<FulfillmentPlan>(`fulfillments/quotation/${quoteId}`);
   }
@@ -21,8 +29,12 @@ export class FulfillmentService {
     return this.api.post<FulfillmentPlan>(`fulfillments/${planId}/accept`, {});
   }
 
-  overridePlan(planId: number, manualSplits: FulfillmentSplit[], reason: string = 'Manual logistics override'): Observable<FulfillmentPlan> {
+  overridePlan(planId: number, manualSplits: any[], reason: string = 'Manual logistics override'): Observable<FulfillmentPlan> {
     return this.api.post<FulfillmentPlan>(`fulfillments/${planId}/override?reason=${encodeURIComponent(reason)}`, manualSplits);
+  }
+
+  reEvaluateBackorders(planId: number): Observable<FulfillmentPlan> {
+    return this.api.post<FulfillmentPlan>(`fulfillments/plans/${planId}/re-evaluate-backorder`, {});
   }
 
   getWarehouses(): Observable<Warehouse[]> {

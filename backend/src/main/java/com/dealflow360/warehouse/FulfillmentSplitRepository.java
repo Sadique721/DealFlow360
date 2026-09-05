@@ -10,4 +10,5 @@ public interface FulfillmentSplitRepository extends JpaRepository<FulfillmentSpl
     List<FulfillmentSplit> findByFulfillmentPlanId(Long fulfillmentPlanId);
     List<FulfillmentSplit> findByQuotationId(Long quotationId);
     List<FulfillmentSplit> findByIsBackorderTrueAndStatus(String status);
+    List<FulfillmentSplit> findByFulfillmentPlanIdAndIsBackorderTrue(Long fulfillmentPlanId);
 }

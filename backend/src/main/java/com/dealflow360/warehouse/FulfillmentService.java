@@ -8,10 +8,13 @@ import com.dealflow360.catalog.Product;
 import com.dealflow360.catalog.ProductRepository;
 import com.dealflow360.config.ConflictException;
 import com.dealflow360.warehouse.dto.InventoryRequest;
+import com.dealflow360.warehouse.dto.ManualSplitRequest;
+import com.dealflow360.quotation.QuotationLine;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -260,6 +263,15 @@ public class FulfillmentService {
         return warehouseStockRepository.save(stock);
     }
 
+    public List<FulfillmentPlan> getAllPlans() {
+        return fulfillmentPlanRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    public FulfillmentPlan getPlanById(Long planId) {
+        return fulfillmentPlanRepository.findById(planId)
+                .orElseThrow(() -> new RuntimeException("Fulfillment plan not found: " + planId));
+    }
+
     public FulfillmentPlan generateOrGetPlan(Long quotationId) {
         Optional<FulfillmentPlan> existing = fulfillmentPlanRepository.findByQuotationId(quotationId);
         if (existing.isPresent()) {
@@ -269,28 +281,35 @@ public class FulfillmentService {
     }
 
     public FulfillmentPlan generateOrRecomputePlan(Long quotationId) {
-        Optional<FulfillmentPlan> existingOpt = fulfillmentPlanRepository.findByQuotationId(quotationId);
         Quotation quotation = quotationRepository.findById(quotationId)
                 .orElseThrow(() -> new RuntimeException("Quotation not found: " + quotationId));
 
+        String qStatus = quotation.getStatus() != null ? quotation.getStatus().toUpperCase() : "";
+        if (!"APPROVED".equals(qStatus) && !"CONFIRMED".equals(qStatus) && !"FULFILLED".equals(qStatus)) {
+            throw new IllegalArgumentException("Fulfillment can only be generated for approved or confirmed quotations. Current quotation status is " + quotation.getStatus());
+        }
+
+        Optional<FulfillmentPlan> existingOpt = fulfillmentPlanRepository.findByQuotationId(quotationId);
         List<Warehouse> warehouses = warehouseRepository.findAll();
         List<WarehouseStock> allStocks = warehouseStockRepository.findAll();
 
         SplitOptimizer.OptimizationResult opt = splitOptimizer.optimizeFulfillment(quotation, warehouses, allStocks);
+
+        String initialStatus = opt.hasBackorder ? "PARTIALLY_FULFILLED" : "ALLOCATION_SUGGESTED";
 
         FulfillmentPlan plan;
         if (existingOpt.isPresent()) {
             plan = existingOpt.get();
             fulfillmentSplitRepository.deleteAll(plan.getSplits());
             plan.getSplits().clear();
-            plan.setStatus("SPLIT_PENDING");
+            plan.setStatus(initialStatus);
             plan.setShipmentCount(opt.shipmentCount);
             plan.setTotalShippingCost(opt.totalShippingCost);
             plan.setUpdatedAt(LocalDateTime.now());
         } else {
             plan = FulfillmentPlan.builder()
                     .quotation(quotation)
-                    .status("SPLIT_PENDING")
+                    .status(initialStatus)
                     .shipmentCount(opt.shipmentCount)
                     .totalShippingCost(opt.totalShippingCost)
                     .build();
@@ -306,68 +325,327 @@ public class FulfillmentService {
         }
 
         auditService.log("FULFILLMENT", quotationId, "SPLIT_OPTIMIZED", "SplitOptimizer Engine",
-                "PENDING", "SPLIT_PENDING", opt.summaryText, BigDecimal.ZERO);
+                "PENDING", initialStatus, opt.summaryText, BigDecimal.ZERO);
 
         return plan;
     }
 
     public FulfillmentPlan acceptSuggestedPlan(Long planId) {
         FulfillmentPlan plan = fulfillmentPlanRepository.findById(planId)
-                .orElseThrow(() -> new RuntimeException("Plan not found: " + planId));
+                .orElseThrow(() -> new RuntimeException("Fulfillment plan not found: " + planId));
 
-        plan.setStatus("FULFILLED");
-        plan.setUpdatedAt(LocalDateTime.now());
-        fulfillmentPlanRepository.save(plan);
-
-        // Reserve stock in warehouses
+        // CRITICAL REQUIREMENT: Re-verify live available stock right before accepting/reserving
         for (FulfillmentSplit split : plan.getSplits()) {
-            if (!split.getIsBackorder()) {
-                Optional<WarehouseStock> stockOpt = warehouseStockRepository
-                        .findByWarehouseIdAndProductId(split.getWarehouse().getId(), split.getProduct().getId());
-                if (stockOpt.isPresent()) {
-                    WarehouseStock ws = stockOpt.get();
-                    ws.setReserved(ws.getReserved() + split.getQuantity());
-                    ws.setAvailable(Math.max(0, ws.getInStock() - ws.getReserved()));
-                    warehouseStockRepository.save(ws);
+            if (!Boolean.TRUE.equals(split.getIsBackorder())) {
+                WarehouseStock ws = warehouseStockRepository
+                        .findByWarehouseIdAndProductId(split.getWarehouse().getId(), split.getProduct().getId())
+                        .orElseThrow(() -> new ConflictException("Inventory record not found for product '"
+                                + split.getProduct().getName() + "' at warehouse '" + split.getWarehouse().getName() + "'."));
+
+                int available = ws.getAvailable() != null ? ws.getAvailable() : (ws.getInStock() - (ws.getReserved() != null ? ws.getReserved() : 0));
+                if (available < split.getQuantity()) {
+                    throw new ConflictException("Stock changed: Warehouse '" + ws.getWarehouse().getName()
+                            + "' currently only has " + available + " available for '" + ws.getProduct().getName()
+                            + "' (allocation requires " + split.getQuantity() + "). Please recalculate the warehouse split.");
                 }
+            }
+        }
+
+        // Live inventory is guaranteed available - transactionally reserve stock
+        boolean hasBackorder = false;
+        for (FulfillmentSplit split : plan.getSplits()) {
+            if (!Boolean.TRUE.equals(split.getIsBackorder())) {
+                WarehouseStock ws = warehouseStockRepository
+                        .findByWarehouseIdAndProductId(split.getWarehouse().getId(), split.getProduct().getId())
+                        .get();
+                int curReserved = ws.getReserved() != null ? ws.getReserved() : 0;
+                ws.setReserved(curReserved + split.getQuantity());
+                ws.setAvailable(Math.max(0, ws.getInStock() - ws.getReserved()));
+                warehouseStockRepository.save(ws);
+
                 split.setStatus("SHIPPED");
+                fulfillmentSplitRepository.save(split);
+            } else {
+                hasBackorder = true;
+                split.setStatus("BACKORDERED");
                 fulfillmentSplitRepository.save(split);
             }
         }
 
+        plan.setStatus(hasBackorder ? "PARTIALLY_FULFILLED" : "FULFILLED");
+        plan.setUpdatedAt(LocalDateTime.now());
+        fulfillmentPlanRepository.save(plan);
+
+        // Transition quotation to CONFIRMED / FULFILLED if currently APPROVED
+        Quotation quotation = plan.getQuotation();
+        if (quotation != null && "APPROVED".equalsIgnoreCase(quotation.getStatus())) {
+            quotation.setStatus(hasBackorder ? "CONFIRMED" : "FULFILLED");
+            quotation.setLastActivityAt(LocalDateTime.now());
+            quotationRepository.save(quotation);
+        }
+
         auditService.log("FULFILLMENT", plan.getQuotation().getId(), "SPLIT_ACCEPTED", "Finance / Ops User",
-                "SPLIT_PENDING", "FULFILLED", "Suggested warehouse allocation confirmed and stock reserved", BigDecimal.ZERO);
+                "ALLOCATION_SUGGESTED", plan.getStatus(), "Suggested warehouse allocation confirmed and stock reserved", BigDecimal.ZERO);
 
         return plan;
     }
 
-    public FulfillmentPlan manualOverride(Long planId, List<FulfillmentSplit> manualSplits, String reason) {
+    public FulfillmentPlan manualOverride(Long planId, List<ManualSplitRequest> manualSplits, String reason) {
         FulfillmentPlan plan = fulfillmentPlanRepository.findById(planId)
-                .orElseThrow(() -> new RuntimeException("Plan not found: " + planId));
+                .orElseThrow(() -> new RuntimeException("Fulfillment plan not found: " + planId));
+
+        if (manualSplits == null || manualSplits.isEmpty()) {
+            throw new IllegalArgumentException("Manual allocation splits cannot be empty");
+        }
+
+        // Release any existing reservations if this plan was already fulfilled/allocated
+        if ("FULFILLED".equalsIgnoreCase(plan.getStatus()) || "ALLOCATED".equalsIgnoreCase(plan.getStatus()) || "PARTIALLY_FULFILLED".equalsIgnoreCase(plan.getStatus())) {
+            for (FulfillmentSplit s : plan.getSplits()) {
+                if (!Boolean.TRUE.equals(s.getIsBackorder()) && s.getWarehouse() != null && s.getProduct() != null) {
+                    warehouseStockRepository.findByWarehouseIdAndProductId(s.getWarehouse().getId(), s.getProduct().getId())
+                            .ifPresent(ws -> {
+                                int curReserved = ws.getReserved() != null ? ws.getReserved() : 0;
+                                ws.setReserved(Math.max(0, curReserved - s.getQuantity()));
+                                ws.setAvailable(Math.max(0, ws.getInStock() - ws.getReserved()));
+                                warehouseStockRepository.save(ws);
+                            });
+                }
+            }
+        }
+
+        List<FulfillmentSplit> newSplits = new ArrayList<>();
+        Set<Long> whIds = new HashSet<>();
+        BigDecimal totalCost = BigDecimal.ZERO;
+        boolean hasBackorder = false;
+        Map<Long, Integer> allocatedPerProduct = new HashMap<>();
+
+        for (ManualSplitRequest req : manualSplits) {
+            if (req.getProductId() == null) {
+                throw new IllegalArgumentException("Product ID is required for each split");
+            }
+            if (req.getQuantity() == null || req.getQuantity() < 0) {
+                throw new IllegalArgumentException("Allocation quantity cannot be negative");
+            }
+            if (req.getQuantity() == 0) {
+                continue;
+            }
+
+            Product prod = productRepository.findById(req.getProductId())
+                    .orElseThrow(() -> new RuntimeException("Product not found: " + req.getProductId()));
+
+            Warehouse wh;
+            if (Boolean.TRUE.equals(req.getIsBackorder())) {
+                hasBackorder = true;
+                wh = req.getWarehouseId() != null
+                        ? warehouseRepository.findById(req.getWarehouseId()).orElseGet(() -> warehouseRepository.findAll().get(0))
+                        : warehouseRepository.findAll().get(0);
+
+                FulfillmentSplit split = FulfillmentSplit.builder()
+                        .fulfillmentPlan(plan)
+                        .quotationId(plan.getQuotation().getId())
+                        .warehouse(wh)
+                        .product(prod)
+                        .quantity(req.getQuantity())
+                        .isBackorder(true)
+                        .estimatedCost(BigDecimal.ZERO)
+                        .shipmentGroup("BACKORDER-" + wh.getName().replace(" ", "-").toUpperCase())
+                        .status("BACKORDERED")
+                        .build();
+                newSplits.add(split);
+            } else {
+                if (req.getWarehouseId() == null) {
+                    throw new IllegalArgumentException("Warehouse ID is required for non-backorder splits");
+                }
+                wh = warehouseRepository.findById(req.getWarehouseId())
+                        .orElseThrow(() -> new RuntimeException("Warehouse not found: " + req.getWarehouseId()));
+
+                WarehouseStock ws = warehouseStockRepository.findByWarehouseIdAndProductId(wh.getId(), prod.getId())
+                        .orElseThrow(() -> new ConflictException("No stock record exists for '" + prod.getName() + "' at warehouse '" + wh.getName() + "'"));
+
+                int available = ws.getAvailable() != null ? ws.getAvailable() : (ws.getInStock() - (ws.getReserved() != null ? ws.getReserved() : 0));
+                if (available < req.getQuantity()) {
+                    throw new ConflictException("Insufficient available stock at '" + wh.getName() + "' for '" + prod.getName()
+                            + "'. Requested: " + req.getQuantity() + ", Available: " + available);
+                }
+
+                // Reserve immediately
+                int curReserved = ws.getReserved() != null ? ws.getReserved() : 0;
+                ws.setReserved(curReserved + req.getQuantity());
+                ws.setAvailable(Math.max(0, ws.getInStock() - ws.getReserved()));
+                warehouseStockRepository.save(ws);
+
+                BigDecimal baseFreight = wh.getBaseFreight() != null ? wh.getBaseFreight() : BigDecimal.valueOf(20.00);
+                BigDecimal weight = wh.getShippingCostWeight() != null ? wh.getShippingCostWeight() : BigDecimal.ONE;
+                BigDecimal freight = baseFreight.multiply(weight).setScale(2, RoundingMode.HALF_UP);
+
+                FulfillmentSplit split = FulfillmentSplit.builder()
+                        .fulfillmentPlan(plan)
+                        .quotationId(plan.getQuotation().getId())
+                        .warehouse(wh)
+                        .product(prod)
+                        .quantity(req.getQuantity())
+                        .isBackorder(false)
+                        .estimatedCost(freight)
+                        .shipmentGroup("SHIP-" + wh.getName().replace(" ", "-").toUpperCase())
+                        .status("ALLOCATED")
+                        .build();
+                newSplits.add(split);
+                whIds.add(wh.getId());
+                totalCost = totalCost.add(freight);
+            }
+
+            allocatedPerProduct.put(prod.getId(), allocatedPerProduct.getOrDefault(prod.getId(), 0) + req.getQuantity());
+        }
+
+        // Validate allocation limits against quotation lines
+        for (QuotationLine line : plan.getQuotation().getLines()) {
+            if (line.getProduct() == null) continue;
+            if (Boolean.TRUE.equals(line.getProduct().getIsSubscription())) continue;
+            if (line.getProduct().getCategory() != null && "Services".equalsIgnoreCase(line.getProduct().getCategory().getName())) continue;
+
+            int required = line.getQuantity() != null ? line.getQuantity() : 1;
+            int allocated = allocatedPerProduct.getOrDefault(line.getProduct().getId(), 0);
+            if (allocated > required) {
+                throw new IllegalArgumentException("Total allocation for product '" + line.getProduct().getName()
+                        + "' (" + allocated + ") exceeds requested quotation quantity (" + required + ")");
+            } else if (allocated < required) {
+                Warehouse defaultWh = !whIds.isEmpty() ? warehouseRepository.findById(whIds.iterator().next()).orElseGet(() -> warehouseRepository.findAll().get(0)) : warehouseRepository.findAll().get(0);
+                int deficit = required - allocated;
+                hasBackorder = true;
+                FulfillmentSplit boSplit = FulfillmentSplit.builder()
+                        .fulfillmentPlan(plan)
+                        .quotationId(plan.getQuotation().getId())
+                        .warehouse(defaultWh)
+                        .product(line.getProduct())
+                        .quantity(deficit)
+                        .isBackorder(true)
+                        .estimatedCost(BigDecimal.ZERO)
+                        .shipmentGroup("BACKORDER-" + defaultWh.getName().replace(" ", "-").toUpperCase())
+                        .status("BACKORDERED")
+                        .build();
+                newSplits.add(boSplit);
+            }
+        }
 
         fulfillmentSplitRepository.deleteAll(plan.getSplits());
         plan.getSplits().clear();
 
-        Set<Long> whIds = new HashSet<>();
-        BigDecimal totalCost = BigDecimal.ZERO;
-
-        for (FulfillmentSplit s : manualSplits) {
-            s.setFulfillmentPlan(plan);
-            s.setQuotationId(plan.getQuotation().getId());
+        for (FulfillmentSplit s : newSplits) {
             fulfillmentSplitRepository.save(s);
             plan.getSplits().add(s);
-            whIds.add(s.getWarehouse().getId());
-            totalCost = totalCost.add(s.getEstimatedCost() != null ? s.getEstimatedCost() : BigDecimal.valueOf(30));
         }
 
-        plan.setStatus("OVERRIDDEN");
+        plan.setStatus(hasBackorder ? "PARTIALLY_FULFILLED" : "OVERRIDDEN");
         plan.setShipmentCount(Math.max(1, whIds.size()));
         plan.setTotalShippingCost(totalCost);
         plan.setUpdatedAt(LocalDateTime.now());
         fulfillmentPlanRepository.save(plan);
 
         auditService.log("FULFILLMENT", plan.getQuotation().getId(), "MANUAL_OVERRIDE", "Finance Officer",
-                "SPLIT_PENDING", "OVERRIDDEN", "Manual warehouse allocation override: " + reason, BigDecimal.ZERO);
+                "ALLOCATION_SUGGESTED", plan.getStatus(), "Manual warehouse allocation override: " + reason, BigDecimal.ZERO);
+
+        return plan;
+    }
+
+    public FulfillmentPlan reEvaluateBackorders(Long planId) {
+        FulfillmentPlan plan = fulfillmentPlanRepository.findById(planId)
+                .orElseThrow(() -> new RuntimeException("Fulfillment plan not found: " + planId));
+
+        List<FulfillmentSplit> backorders = fulfillmentSplitRepository.findByFulfillmentPlanIdAndIsBackorderTrue(planId);
+        if (backorders.isEmpty()) {
+            return plan;
+        }
+
+        List<Warehouse> warehouses = warehouseRepository.findAll();
+        warehouses.sort(Comparator.comparing(w ->
+                (w.getBaseFreight() != null ? w.getBaseFreight() : BigDecimal.valueOf(20.00))
+                        .multiply(w.getShippingCostWeight() != null ? w.getShippingCostWeight() : BigDecimal.ONE)));
+
+        boolean anyAllocated = false;
+
+        for (FulfillmentSplit boSplit : new ArrayList<>(backorders)) {
+            Long productId = boSplit.getProduct().getId();
+            int remainingBackorder = boSplit.getQuantity();
+
+            for (Warehouse wh : warehouses) {
+                if (remainingBackorder <= 0) break;
+
+                Optional<WarehouseStock> stockOpt = warehouseStockRepository.findByWarehouseIdAndProductId(wh.getId(), productId);
+                if (stockOpt.isPresent()) {
+                    WarehouseStock ws = stockOpt.get();
+                    int avail = ws.getAvailable() != null ? ws.getAvailable() : (ws.getInStock() - (ws.getReserved() != null ? ws.getReserved() : 0));
+                    if (avail > 0) {
+                        int toAllocate = Math.min(avail, remainingBackorder);
+                        int curReserved = ws.getReserved() != null ? ws.getReserved() : 0;
+                        ws.setReserved(curReserved + toAllocate);
+                        ws.setAvailable(Math.max(0, ws.getInStock() - ws.getReserved()));
+                        warehouseStockRepository.save(ws);
+
+                        BigDecimal baseFreight = wh.getBaseFreight() != null ? wh.getBaseFreight() : BigDecimal.valueOf(20.00);
+                        BigDecimal weight = wh.getShippingCostWeight() != null ? wh.getShippingCostWeight() : BigDecimal.ONE;
+                        BigDecimal freight = baseFreight.multiply(weight).setScale(2, RoundingMode.HALF_UP);
+
+                        Optional<FulfillmentSplit> existingAlloc = plan.getSplits().stream()
+                                .filter(s -> !Boolean.TRUE.equals(s.getIsBackorder())
+                                        && s.getWarehouse().getId().equals(wh.getId())
+                                        && s.getProduct().getId().equals(productId))
+                                .findFirst();
+
+                        if (existingAlloc.isPresent()) {
+                            FulfillmentSplit exist = existingAlloc.get();
+                            exist.setQuantity(exist.getQuantity() + toAllocate);
+                            fulfillmentSplitRepository.save(exist);
+                        } else {
+                            FulfillmentSplit newSplit = FulfillmentSplit.builder()
+                                    .fulfillmentPlan(plan)
+                                    .quotationId(plan.getQuotation().getId())
+                                    .warehouse(wh)
+                                    .product(boSplit.getProduct())
+                                    .quantity(toAllocate)
+                                    .isBackorder(false)
+                                    .estimatedCost(freight)
+                                    .shipmentGroup("SHIP-" + wh.getName().replace(" ", "-").toUpperCase())
+                                    .status("ALLOCATED")
+                                    .build();
+                            fulfillmentSplitRepository.save(newSplit);
+                            plan.getSplits().add(newSplit);
+                        }
+
+                        remainingBackorder -= toAllocate;
+                        anyAllocated = true;
+                    }
+                }
+            }
+
+            if (remainingBackorder <= 0) {
+                plan.getSplits().remove(boSplit);
+                fulfillmentSplitRepository.delete(boSplit);
+            } else {
+                boSplit.setQuantity(remainingBackorder);
+                fulfillmentSplitRepository.save(boSplit);
+            }
+        }
+
+        if (anyAllocated) {
+            Set<Long> utilizedWhs = new HashSet<>();
+            BigDecimal totalCost = BigDecimal.ZERO;
+            for (FulfillmentSplit s : plan.getSplits()) {
+                if (!Boolean.TRUE.equals(s.getIsBackorder()) && s.getWarehouse() != null) {
+                    utilizedWhs.add(s.getWarehouse().getId());
+                    totalCost = totalCost.add(s.getEstimatedCost() != null ? s.getEstimatedCost() : BigDecimal.ZERO);
+                }
+            }
+
+            boolean remainingBackordersExist = plan.getSplits().stream().anyMatch(s -> Boolean.TRUE.equals(s.getIsBackorder()));
+            plan.setStatus(remainingBackordersExist ? "PARTIALLY_FULFILLED" : "FULFILLED");
+            plan.setShipmentCount(Math.max(1, utilizedWhs.size()));
+            plan.setTotalShippingCost(totalCost);
+            plan.setUpdatedAt(LocalDateTime.now());
+            fulfillmentPlanRepository.save(plan);
+
+            auditService.log("FULFILLMENT", plan.getQuotation().getId(), "BACKORDER_REEVALUATED", "System / Ops",
+                    "BACKORDERED", plan.getStatus(), "Backorders re-evaluated and allocated from replenished warehouse stock", BigDecimal.ZERO);
+        }
 
         return plan;
     }

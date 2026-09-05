@@ -3,6 +3,7 @@ package com.dealflow360.warehouse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.dealflow360.warehouse.dto.InventoryRequest;
+import com.dealflow360.warehouse.dto.ManualSplitRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -101,13 +102,29 @@ public class FulfillmentController {
         return ResponseEntity.ok(fulfillmentService.setStock(warehouseId, productId, inStock, reserved, reorderLevel));
     }
 
+    @GetMapping("/plans")
+    @PreAuthorize("hasAnyRole('ADMIN','SALES_REP','SALES_MANAGER','FINANCE')")
+    @Operation(summary = "List all fulfillment plans ordered newest first")
+    public ResponseEntity<List<FulfillmentPlan>> getAllPlans() {
+        return ResponseEntity.ok(fulfillmentService.getAllPlans());
+    }
+
+    @GetMapping("/plans/{planId}")
+    @PreAuthorize("hasAnyRole('ADMIN','SALES_REP','SALES_MANAGER','FINANCE')")
+    @Operation(summary = "Get fulfillment plan by plan ID")
+    public ResponseEntity<FulfillmentPlan> getPlanById(@PathVariable Long planId) {
+        return ResponseEntity.ok(fulfillmentService.getPlanById(planId));
+    }
+
     @GetMapping("/quotation/{quotationId}")
+    @PreAuthorize("hasAnyRole('ADMIN','SALES_REP','SALES_MANAGER','FINANCE')")
     @Operation(summary = "Get or generate recommended multi-warehouse fulfillment split plan")
     public ResponseEntity<FulfillmentPlan> getPlanForQuotation(@PathVariable Long quotationId) {
         return ResponseEntity.ok(fulfillmentService.generateOrGetPlan(quotationId));
     }
 
     @PostMapping("/quotation/{quotationId}/recompute")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','SALES_MANAGER')")
     @Operation(summary = "Recompute greedy split plan for quotation")
     public ResponseEntity<FulfillmentPlan> recomputePlan(@PathVariable Long quotationId) {
         return ResponseEntity.ok(fulfillmentService.generateOrRecomputePlan(quotationId));
@@ -125,9 +142,16 @@ public class FulfillmentController {
     @Operation(summary = "Manually override warehouse allocation splits (ADMIN/FINANCE only)")
     public ResponseEntity<FulfillmentPlan> overridePlan(
             @PathVariable Long planId,
-            @RequestBody List<FulfillmentSplit> manualSplits,
+            @RequestBody List<ManualSplitRequest> manualSplits,
             @RequestParam(defaultValue = "Manual logistics decision") String reason) {
         return ResponseEntity.ok(fulfillmentService.manualOverride(planId, manualSplits, reason));
+    }
+
+    @PostMapping("/plans/{planId}/re-evaluate-backorder")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','SALES_MANAGER')")
+    @Operation(summary = "Re-evaluate pending backorders against live inventory across all warehouses")
+    public ResponseEntity<FulfillmentPlan> reEvaluateBackorders(@PathVariable Long planId) {
+        return ResponseEntity.ok(fulfillmentService.reEvaluateBackorders(planId));
     }
 
     @PostMapping("/stock/add")
