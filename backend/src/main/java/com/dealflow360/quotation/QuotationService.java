@@ -272,7 +272,11 @@ public class QuotationService {
                     .orElseThrow(() -> new RuntimeException("User not found: " + repEmail));
         }
 
-        String quoteNumber = "Q-" + (1000 + quotationRepository.count() + 1);
+        long nextNum = 1000 + quotationRepository.count() + 1;
+        while (quotationRepository.findByQuoteNumber("Q-" + nextNum).isPresent()) {
+            nextNum++;
+        }
+        String quoteNumber = "Q-" + nextNum;
         String portalToken = "portal-" + UUID.randomUUID().toString();
 
         Quotation quotation = Quotation.builder()

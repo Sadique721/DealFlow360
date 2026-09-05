@@ -4,6 +4,8 @@ import com.dealflow360.audit.AuditService;
 import com.dealflow360.quotation.Quotation;
 import com.dealflow360.quotation.QuotationRepository;
 import com.dealflow360.websocket.WebSocketPublisher;
+import com.dealflow360.catalog.Product;
+import com.dealflow360.catalog.ProductRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +21,7 @@ public class FulfillmentService {
     private final FulfillmentSplitRepository fulfillmentSplitRepository;
     private final WarehouseRepository warehouseRepository;
     private final WarehouseStockRepository warehouseStockRepository;
+    private final ProductRepository productRepository;
     private final QuotationRepository quotationRepository;
     private final SplitOptimizer splitOptimizer;
     private final AuditService auditService;
@@ -28,6 +31,7 @@ public class FulfillmentService {
                               FulfillmentSplitRepository fulfillmentSplitRepository,
                               WarehouseRepository warehouseRepository,
                               WarehouseStockRepository warehouseStockRepository,
+                              ProductRepository productRepository,
                               QuotationRepository quotationRepository,
                               SplitOptimizer splitOptimizer,
                               AuditService auditService,
@@ -36,6 +40,7 @@ public class FulfillmentService {
         this.fulfillmentSplitRepository = fulfillmentSplitRepository;
         this.warehouseRepository = warehouseRepository;
         this.warehouseStockRepository = warehouseStockRepository;
+        this.productRepository = productRepository;
         this.quotationRepository = quotationRepository;
         this.splitOptimizer = splitOptimizer;
         this.auditService = auditService;
@@ -46,6 +51,40 @@ public class FulfillmentService {
         return warehouseRepository.findAll();
     }
 
+    public Optional<Warehouse> getWarehouseById(Long id) {
+        return warehouseRepository.findById(id);
+    }
+
+    public Warehouse createWarehouse(Warehouse warehouse) {
+        if (warehouse.getName() == null || warehouse.getName().trim().isEmpty()) {
+            throw new IllegalArgumentException("Warehouse name is required");
+        }
+        if (warehouse.getLocation() == null || warehouse.getLocation().trim().isEmpty()) {
+            warehouse.setLocation("General Facility");
+        }
+        if (warehouse.getBaseFreight() == null) {
+            warehouse.setBaseFreight(BigDecimal.valueOf(20.00));
+        }
+        if (warehouse.getShippingCostWeight() == null) {
+            warehouse.setShippingCostWeight(BigDecimal.ONE);
+        }
+        return warehouseRepository.save(warehouse);
+    }
+
+    public Warehouse updateWarehouse(Long id, Warehouse updated) {
+        Warehouse wh = warehouseRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Warehouse not found: " + id));
+        if (updated.getName() != null) wh.setName(updated.getName().trim());
+        if (updated.getLocation() != null) wh.setLocation(updated.getLocation().trim());
+        if (updated.getBaseFreight() != null) wh.setBaseFreight(updated.getBaseFreight());
+        if (updated.getShippingCostWeight() != null) wh.setShippingCostWeight(updated.getShippingCostWeight());
+        return warehouseRepository.save(wh);
+    }
+
+    public void deleteWarehouse(Long id) {
+        warehouseRepository.deleteById(id);
+    }
+
     public List<WarehouseStock> getWarehouseStocks(Long warehouseId) {
         return warehouseStockRepository.findByWarehouseId(warehouseId);
     }
@@ -54,12 +93,39 @@ public class FulfillmentService {
         return warehouseStockRepository.findAll();
     }
 
+    public WarehouseStock setStock(Long warehouseId, Long productId, int inStock, Integer reserved, Integer reorderLevel) {
+        Warehouse wh = warehouseRepository.findById(warehouseId)
+                .orElseThrow(() -> new RuntimeException("Warehouse not found: " + warehouseId));
+        Product prod = productRepository.findById(productId)
+                .orElseThrow(() -> new RuntimeException("Product not found: " + productId));
+
+        WarehouseStock stock = warehouseStockRepository.findByWarehouseIdAndProductId(warehouseId, productId)
+                .orElseGet(() -> WarehouseStock.builder()
+                        .warehouse(wh)
+                        .product(prod)
+                        .reserved(0)
+                        .reorderLevel(reorderLevel != null ? reorderLevel : 10)
+                        .build());
+
+        stock.setInStock(inStock);
+        stock.setReserved(reserved != null ? reserved : 0);
+        stock.setAvailable(Math.max(0, inStock - stock.getReserved()));
+        if (reorderLevel != null) {
+            stock.setReorderLevel(reorderLevel);
+        }
+        return warehouseStockRepository.save(stock);
+    }
+
     public FulfillmentPlan generateOrGetPlan(Long quotationId) {
         Optional<FulfillmentPlan> existing = fulfillmentPlanRepository.findByQuotationId(quotationId);
         if (existing.isPresent()) {
             return existing.get();
         }
+        return generateOrRecomputePlan(quotationId);
+    }
 
+    public FulfillmentPlan generateOrRecomputePlan(Long quotationId) {
+        Optional<FulfillmentPlan> existingOpt = fulfillmentPlanRepository.findByQuotationId(quotationId);
         Quotation quotation = quotationRepository.findById(quotationId)
                 .orElseThrow(() -> new RuntimeException("Quotation not found: " + quotationId));
 
@@ -68,17 +134,29 @@ public class FulfillmentService {
 
         SplitOptimizer.OptimizationResult opt = splitOptimizer.optimizeFulfillment(quotation, warehouses, allStocks);
 
-        FulfillmentPlan plan = FulfillmentPlan.builder()
-                .quotation(quotation)
-                .status("SPLIT_PENDING")
-                .shipmentCount(opt.shipmentCount)
-                .totalShippingCost(opt.totalShippingCost)
-                .build();
+        FulfillmentPlan plan;
+        if (existingOpt.isPresent()) {
+            plan = existingOpt.get();
+            fulfillmentSplitRepository.deleteAll(plan.getSplits());
+            plan.getSplits().clear();
+            plan.setStatus("SPLIT_PENDING");
+            plan.setShipmentCount(opt.shipmentCount);
+            plan.setTotalShippingCost(opt.totalShippingCost);
+            plan.setUpdatedAt(LocalDateTime.now());
+        } else {
+            plan = FulfillmentPlan.builder()
+                    .quotation(quotation)
+                    .status("SPLIT_PENDING")
+                    .shipmentCount(opt.shipmentCount)
+                    .totalShippingCost(opt.totalShippingCost)
+                    .build();
+        }
 
         plan = fulfillmentPlanRepository.save(plan);
 
         for (FulfillmentSplit split : opt.splits) {
             split.setFulfillmentPlan(plan);
+            split.setQuotationId(quotationId);
             fulfillmentSplitRepository.save(split);
             plan.getSplits().add(split);
         }

@@ -199,8 +199,8 @@ export function generate120Splits(): FulfillmentSplit[] {
       productName: prod.name,
       allocatedQuantity: qty - backorder,
       backorderedQuantity: backorder,
-      estimatedFreightCost: Math.round(wh.baseFreightCost + ((qty * (prod.weightKg || 5)) * wh.weightRatePerKg)),
-      leadTimeDays: wh.leadTimeDays + (i % 2),
+      estimatedFreightCost: Math.round((wh.baseFreightCost || 35) + ((qty * (prod.weightKg || 5)) * (wh.weightRatePerKg || 1.5))),
+      leadTimeDays: (wh.leadTimeDays || 2) + (i % 2),
       status: backorder > 0 ? 'BACKORDERED' : (i % 2 === 0 ? 'DISPATCHED' : 'ALLOCATED')
     });
   }

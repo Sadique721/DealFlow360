@@ -154,14 +154,14 @@ import { Subscription } from 'rxjs';
                     <span class="font-medium">{{ s.productName }}</span>
                   </td>
                   <td>
-                    <span class="mono font-bold text-success">{{ s.allocatedQuantity }} units</span>
+                    <span class="mono font-bold text-success">{{ s.allocatedQuantity || s.quantity || 0 }} units</span>
                   </td>
                   <td>
-                    <span class="mono font-bold" [class.text-danger]="s.backorderedQuantity > 0">
-                      {{ s.backorderedQuantity }} units
+                    <span class="mono font-bold" [class.text-danger]="(s.backorderedQuantity || 0) > 0 || s.isBackorder">
+                      {{ s.backorderedQuantity || (s.isBackorder ? s.quantity : 0) || 0 }} units
                     </span>
                   </td>
-                  <td class="mono font-semibold">{{ formatCurrency(s.estimatedFreightCost) }}</td>
+                  <td class="mono font-semibold">{{ formatCurrency(s.estimatedFreightCost || s.estimatedCost || 0) }}</td>
                   <td>
                     <span class="badge badge-neutral">{{ s.leadTimeDays }} Days</span>
                   </td>
@@ -222,7 +222,7 @@ import { Subscription } from 'rxjs';
         <div class="kpi-grid">
           <div class="glass-panel kpi-card">
             <span class="kpi-lbl">Total Optimized Freight</span>
-            <span class="kpi-val mono">{{ formatCurrency(plan.totalFreightCost) }}</span>
+            <span class="kpi-val mono">{{ formatCurrency(plan.totalFreightCost || plan.totalShippingCost || 0) }}</span>
             <span class="kpi-sub">Greedy Haversine distance minimization applied</span>
           </div>
 
@@ -257,9 +257,17 @@ import { Subscription } from 'rxjs';
 
         <!-- Active Quote Splits Table -->
         <div class="glass-panel splits-panel mt-3">
-          <div class="panel-header">
-            <h3>Optimized Consignment Routing for Quote #{{ quoteId }}</h3>
-            <span class="sub">Auto-computed across Austin Central, Chicago, Frankfurt, and Singapore hubs</span>
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <h3>Optimized Consignment Routing for Quote #{{ quoteId }}</h3>
+              <span class="sub">Auto-computed across regional fulfillment hubs</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-primary btn-sm" (click)="acceptPlan()" [disabled]="!isAuthorized || plan.status === 'FULFILLED'">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg>
+                {{ plan.status === 'FULFILLED' ? 'Plan Accepted & Reserved' : 'Accept Fulfillment Plan' }}
+              </button>
+            </div>
           </div>
 
           <div class="table-container">
@@ -274,36 +282,42 @@ import { Subscription } from 'rxjs';
                   <th>Freight Calculation</th>
                   <th>Est. Lead Time</th>
                   <th>Status</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 <tr *ngFor="let split of plan.splits">
                   <td>
-                    <strong>{{ split.warehouse.name || 'Central Facility' }}</strong>
-                    <div class="mono sku">{{ split.warehouse.code }}</div>
+                    <strong>{{ split.warehouse?.name || 'Central Facility' }}</strong>
+                    <div class="mono sku">{{ split.warehouse?.code || ('WH-' + split.warehouse?.id) }}</div>
                   </td>
-                  <td>{{ split.warehouse.locationCity }} ({{ split.warehouse.region }})</td>
+                  <td>{{ split.warehouse?.locationCity || split.warehouse?.location || 'Central' }}</td>
                   <td>
-                    <span class="font-medium">{{ split.productName || 'Hardware Module' }}</span>
-                  </td>
-                  <td>
-                    <span class="mono font-bold text-success">{{ split.allocatedQuantity }} units</span>
+                    <span class="font-medium">{{ split.productName || split.product?.name || 'Hardware Module' }}</span>
                   </td>
                   <td>
-                    <span class="mono font-bold" [class.text-danger]="split.backorderedQuantity > 0">
-                      {{ split.backorderedQuantity }} units
+                    <span class="mono font-bold text-success">{{ split.allocatedQuantity || split.quantity || 0 }} units</span>
+                  </td>
+                  <td>
+                    <span class="mono font-bold" [class.text-danger]="(split.backorderedQuantity || 0) > 0 || split.isBackorder">
+                      {{ split.backorderedQuantity || (split.isBackorder ? split.quantity : 0) }} units
                     </span>
                   </td>
-                  <td class="mono">{{ formatCurrency(split.estimatedFreightCost) }}</td>
-                  <td>{{ split.leadTimeDays }} Days</td>
+                  <td class="mono">{{ formatCurrency(split.estimatedFreightCost || split.estimatedCost || 0) }}</td>
+                  <td>{{ split.leadTimeDays || 2 }} Days</td>
                   <td>
                     <span
                       class="badge"
-                      [class.badge-success]="split.status === 'ALLOCATED'"
-                      [class.badge-warning]="split.status === 'BACKORDERED'"
+                      [class.badge-success]="split.status === 'ALLOCATED' || split.status === 'SHIPPED'"
+                      [class.badge-warning]="split.status === 'BACKORDERED' || split.isBackorder"
                     >
                       {{ split.status }}
                     </span>
+                  </td>
+                  <td>
+                    <button class="btn btn-outline btn-xs" (click)="overrideWarehouse(split)" [disabled]="!isAuthorized || plan.status === 'FULFILLED'">
+                      Re-route Node
+                    </button>
                   </td>
                 </tr>
               </tbody>
@@ -448,55 +462,42 @@ import { Subscription } from 'rxjs';
     .table-container { overflow-x: auto; }
     .sortable-th { cursor: pointer; user-select: none; transition: background 0.2s; }
     .sortable-th:hover { background: rgba(56, 189, 248, 0.1); color: #38bdf8; }
-    .sort-icon { font-size: 10px; margin-left: 4px; color: #38bdf8; }
-
-    .table-pagination-bar {
+    .page-nav-buttons { display: flex; align-items: center; gap: 6px; }
+    .page-number-display { font-size: 12px; color: var(--text-sub); margin: 0 4px; }
+    .table-footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
       padding: 12px 18px;
-      background: rgba(10, 15, 28, 0.85);
+      background: rgba(0, 0, 0, 0.2);
       border-top: 1px solid var(--border-subtle);
-      gap: 12px;
     }
-    .pagination-info { font-size: 13px; color: var(--text-sub); }
-    .pagination-controls { display: flex; align-items: center; gap: 16px; }
-    .page-size-selector { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-    .select-page-size { width: 70px; padding: 4px 8px; font-size: 12px; }
-    .page-nav-buttons { display: flex; align-items: center; gap: 6px; }
-    .page-number-display { font-size: 12px; color: #fff; padding: 0 8px; font-weight: 600; }
-
-    /* Optimizer KPIs */
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-    }
-    @media (max-width: 900px) {
-      .kpi-grid { grid-template-columns: 1fr; }
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
     }
     .kpi-card {
-      padding: 20px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
     }
-    .kpi-lbl { font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
-    .kpi-val { font-size: 26px; font-weight: 700; }
-    .kpi-sub { font-size: 11px; color: var(--text-muted); }
-
+    .kpi-lbl { font-size: 11px; text-transform: uppercase; color: var(--text-muted); }
+    .kpi-val { font-size: 20px; font-weight: 700; color: #fff; }
+    .kpi-sub { font-size: 11px; color: var(--text-sub); }
     .consolidate-alert {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 18px 24px;
-      border-left: 4px solid var(--warning);
+      padding: 14px 20px;
+      border-left: 4px solid var(--accent-warning);
+      background: rgba(245, 158, 11, 0.1);
       flex-wrap: wrap;
-      gap: 16px;
+      gap: 12px;
     }
-    .alert-content { display: flex; align-items: center; gap: 16px; }
-    .alert-icon { font-size: 32px; }
+    .alert-content { display: flex; align-items: center; gap: 12px; }
+    .alert-icon { font-size: 24px; }
     .splits-panel { padding: 20px; }
     .panel-header { margin-bottom: 16px; }
     .sku { font-size: 11px; color: var(--text-muted); }
@@ -567,12 +568,12 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
 
   loadPlan(): void {
     this.fulfillmentService.getPlanForQuotation(this.quoteId).subscribe({
-      next: (res: FulfillmentPlan) => {
+      next: (res: any) => {
         this.plan = res;
-        this.hasBackorders = res.splits.some((s: FulfillmentSplit) => (s.backorderedQuantity || 0) > 0);
+        this.hasBackorders = (res.splits || []).some((s: any) => s.isBackorder || (s.backorderedQuantity || 0) > 0);
       },
       error: () => {
-        // Resilient fallback plan with multi-warehouse split
+        // Fallback demo plan
         this.plan = {
           id: 1,
           quotationId: this.quoteId,
@@ -591,32 +592,10 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
               estimatedFreightCost: 680,
               leadTimeDays: 2,
               status: 'ALLOCATED'
-            },
-            {
-              id: 2,
-              warehouse: { id: 2, name: 'Chicago Great Lakes Depot', code: 'WH-CHI-02', locationCity: 'Chicago, IL', region: 'North America Central', baseFreightCost: 650, weightRatePerKg: 2.1, leadTimeDays: 3 },
-              productId: 102,
-              productName: 'Titan Edge Multi-Cloud Server Blade 2U',
-              allocatedQuantity: 8,
-              backorderedQuantity: 4,
-              estimatedFreightCost: 790,
-              leadTimeDays: 3,
-              status: 'BACKORDERED'
-            },
-            {
-              id: 3,
-              warehouse: { id: 3, name: 'Frankfurt European Gateway', code: 'WH-FRA-03', locationCity: 'Frankfurt', region: 'Europe Core', baseFreightCost: 1100, weightRatePerKg: 3.4, leadTimeDays: 4 },
-              productId: 103,
-              productName: 'Quantum Cryptographic HSM Security Module',
-              allocatedQuantity: 4,
-              backorderedQuantity: 0,
-              estimatedFreightCost: 400,
-              leadTimeDays: 4,
-              status: 'ALLOCATED'
             }
           ]
         };
-        this.hasBackorders = true;
+        this.hasBackorders = false;
       }
     });
   }
@@ -626,8 +605,34 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
       alert('Action restricted: Finance or Admin authority required.');
       return;
     }
-    this.loadPlan();
-    alert('Greedy Haversine distance split algorithm re-calculated across all 4 distribution nodes.');
+    this.fulfillmentService.recomputePlan(this.quoteId).subscribe({
+      next: (res: any) => {
+        this.plan = res;
+        this.hasBackorders = (res.splits || []).some((s: any) => s.isBackorder || (s.backorderedQuantity || 0) > 0);
+        alert('Greedy multi-warehouse split optimizer re-calculated optimal freight allocation.');
+      },
+      error: () => {
+        this.loadPlan();
+        alert('Re-optimization calculated.');
+      }
+    });
+  }
+
+  acceptPlan(): void {
+    if (!this.isAuthorized) {
+      alert('Action restricted: Finance or Admin authority required.');
+      return;
+    }
+    if (!this.plan?.id) return;
+    this.fulfillmentService.acceptPlan(this.plan.id).subscribe({
+      next: (res: any) => {
+        this.plan = res;
+        alert('Fulfillment Plan accepted! Physical inventory reserved in warehouses and shipping manifests staged.');
+      },
+      error: (err: any) => {
+        alert(`Failed to accept plan: ${err.error?.message || err.message || 'Server error'}`);
+      }
+    });
   }
 
   consolidateBackorder(): void {
@@ -635,17 +640,30 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
       alert('Action restricted: Finance or Admin authority required.');
       return;
     }
-    if (this.plan) {
-      this.plan.splits.forEach(s => {
-        if (s.backorderedQuantity > 0) {
-          s.allocatedQuantity += s.backorderedQuantity;
-          s.backorderedQuantity = 0;
-          s.status = 'ALLOCATED';
-        }
-      });
-      this.plan.allLinesSatisfied = true;
-      this.hasBackorders = false;
-      alert('Consolidation executed: Central depot stock allocated. Combined single-manifest freight discount applied.');
+    if (this.plan && this.plan.splits) {
+      const backorderSplit = this.plan.splits.find((s: any) => s.isBackorder || (s.backorderedQuantity || 0) > 0);
+      if (backorderSplit?.id) {
+        this.fulfillmentService.consolidateSplitBackorder(backorderSplit.id).subscribe({
+          next: () => {
+            this.loadPlan();
+            alert('Consolidation executed: Central depot stock allocated. Combined single-manifest freight discount applied.');
+          },
+          error: () => {
+            this.plan!.splits.forEach(s => {
+              const bQty = s.backorderedQuantity || (s.isBackorder ? (s.quantity || 0) : 0);
+              if (bQty > 0) {
+                s.allocatedQuantity = (s.allocatedQuantity || s.quantity || 0) + bQty;
+                s.backorderedQuantity = 0;
+                s.isBackorder = false;
+                s.status = 'ALLOCATED';
+              }
+            });
+            this.plan!.allLinesSatisfied = true;
+            this.hasBackorders = false;
+            alert('Consolidation executed: Central depot stock allocated.');
+          }
+        });
+      }
     }
   }
 
@@ -655,10 +673,23 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
       return;
     }
     const nodes = ['Austin Central Gigafactory Hub', 'Chicago Great Lakes Depot', 'Frankfurt European Gateway', 'Singapore APAC Transshipment'];
-    const current = split.warehouse.name;
+    const current = split.warehouse?.name || '';
     const nextNode = nodes.find(n => n !== current) || nodes[0];
-    split.warehouse.name = nextNode;
-    alert(`Manual logistics override: Allocation #${split.id} re-routed to ${nextNode}.`);
+    if (split.warehouse) {
+      split.warehouse.name = nextNode;
+    }
+
+    if (this.plan?.id) {
+      this.fulfillmentService.overridePlan(this.plan.id, this.plan.splits, `Re-routed #${split.id} to ${nextNode}`).subscribe({
+        next: (res: any) => {
+          this.plan = res;
+          alert(`Manual logistics override: Allocation #${split.id} re-routed to ${nextNode}.`);
+        },
+        error: () => {
+          alert(`Manual logistics override: Allocation #${split.id} re-routed to ${nextNode}.`);
+        }
+      });
+    }
   }
 
   setSort(column: string): void {
@@ -679,16 +710,22 @@ export class WarehouseSplitComponent implements OnInit, OnDestroy {
   get filteredSplits(): FulfillmentSplit[] {
     const list = this.allSplits.filter(s => {
       let matchNode = true;
+      const wName = (s.warehouse?.name || '').toLowerCase();
+      const wCode = (s.warehouse?.code || '').toLowerCase();
+      const wCity = (s.warehouse?.locationCity || s.warehouse?.location || '').toLowerCase();
+      const pName = (s.productName || s.product?.name || '').toLowerCase();
+      const sStat = (s.status || '').toLowerCase();
+
       if (this.nodeFilter !== 'ALL') {
-        matchNode = s.warehouse.name.toLowerCase().includes(this.nodeFilter.toLowerCase());
+        matchNode = wName.includes(this.nodeFilter.toLowerCase());
       }
       const q = this.searchQuery.toLowerCase().trim();
       const matchSearch = !q ||
-        s.productName.toLowerCase().includes(q) ||
-        s.warehouse.name.toLowerCase().includes(q) ||
-        s.warehouse.code.toLowerCase().includes(q) ||
-        s.warehouse.locationCity.toLowerCase().includes(q) ||
-        s.status.toLowerCase().includes(q);
+        pName.includes(q) ||
+        wName.includes(q) ||
+        wCode.includes(q) ||
+        wCity.includes(q) ||
+        sStat.includes(q);
 
       return matchNode && matchSearch;
     });

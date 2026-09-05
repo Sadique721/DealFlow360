@@ -318,34 +318,48 @@ export interface ApprovalRequest {
 export interface Warehouse {
   id: number;
   name: string;
-  code: string;
-  locationCity: string;
-  region: string;
-  baseFreightCost: number;
-  weightRatePerKg: number;
-  leadTimeDays: number;
+  code?: string;
+  location?: string;
+  locationCity?: string;
+  region?: string;
+  baseFreight?: number;
+  baseFreightCost?: number;
+  shippingCostWeight?: number;
+  weightRatePerKg?: number;
+  leadTimeDays?: number;
 }
 
 export interface FulfillmentSplit {
   id: number;
+  quotationId?: number;
   warehouse: Warehouse;
-  productId: number;
-  productName: string;
-  allocatedQuantity: number;
-  backorderedQuantity: number;
-  estimatedFreightCost: number;
-  leadTimeDays: number;
-  status: 'ALLOCATED' | 'BACKORDERED' | 'DISPATCHED' | 'DELIVERED';
+  productId?: number;
+  product?: Product;
+  productName?: string;
+  quantity?: number;
+  allocatedQuantity?: number;
+  backorderedQuantity?: number;
+  isBackorder?: boolean;
+  estimatedCost?: number;
+  estimatedFreightCost?: number;
+  shipmentGroup?: string;
+  leadTimeDays?: number;
+  status: 'ALLOCATED' | 'BACKORDERED' | 'DISPATCHED' | 'DELIVERED' | 'SHIPPED' | string;
 }
 
 export interface FulfillmentPlan {
   id: number;
-  quotationId: number;
-  status: 'OPTIMIZED' | 'PARTIALLY_ALLOCATED' | 'FULFILLED';
-  totalFreightCost: number;
-  totalLeadTimeDays: number;
-  allLinesSatisfied: boolean;
+  quotationId?: number;
+  quotation?: Quotation;
+  status: 'OPTIMIZED' | 'PARTIALLY_ALLOCATED' | 'FULFILLED' | 'PENDING' | 'SPLIT_PENDING' | 'OVERRIDDEN' | string;
+  totalShippingCost?: number;
+  totalFreightCost?: number;
+  shipmentCount?: number;
+  totalLeadTimeDays?: number;
+  allLinesSatisfied?: boolean;
   splits: FulfillmentSplit[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface DealHealthFlag {

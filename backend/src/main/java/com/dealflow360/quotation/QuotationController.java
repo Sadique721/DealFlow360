@@ -28,10 +28,14 @@ public class QuotationController {
 
     private final QuotationService quotationService;
     private final ApprovalService approvalService;
+    private final com.dealflow360.warehouse.FulfillmentService fulfillmentService;
 
-    public QuotationController(QuotationService quotationService, ApprovalService approvalService) {
+    public QuotationController(QuotationService quotationService,
+                               ApprovalService approvalService,
+                               com.dealflow360.warehouse.FulfillmentService fulfillmentService) {
         this.quotationService = quotationService;
         this.approvalService = approvalService;
+        this.fulfillmentService = fulfillmentService;
     }
 
     @GetMapping
@@ -124,6 +128,18 @@ public class QuotationController {
             @AuthenticationPrincipal AuthUser authUser) {
         String cancelledBy = authUser != null ? authUser.getName() : "User";
         return ResponseEntity.ok(quotationService.cancelQuotation(id, cancelledBy));
+    }
+
+    @GetMapping("/{id}/fulfillment-plan")
+    @Operation(summary = "Get or generate recommended multi-warehouse fulfillment split plan")
+    public ResponseEntity<com.dealflow360.warehouse.FulfillmentPlan> getFulfillmentPlan(@PathVariable Long id) {
+        return ResponseEntity.ok(fulfillmentService.generateOrGetPlan(id));
+    }
+
+    @PostMapping("/{id}/fulfillment-plan")
+    @Operation(summary = "Generate/recompute recommended multi-warehouse fulfillment split plan")
+    public ResponseEntity<com.dealflow360.warehouse.FulfillmentPlan> createOrRecomputeFulfillmentPlan(@PathVariable Long id) {
+        return ResponseEntity.ok(fulfillmentService.generateOrRecomputePlan(id));
     }
 
     @GetMapping("/{id}/risk-breakdown")

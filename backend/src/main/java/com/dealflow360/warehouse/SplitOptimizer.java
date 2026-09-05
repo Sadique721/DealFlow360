@@ -27,16 +27,22 @@ public class SplitOptimizer {
         Set<Long> utilizedWarehouseIds = new HashSet<>();
         BigDecimal totalCost = BigDecimal.ZERO;
 
-        // Index stocks by warehouseId:productId
-        Map<String, WarehouseStock> stockMap = new HashMap<>();
-        for (WarehouseStock stock : allStocks) {
-            String key = stock.getWarehouse().getId() + ":" + stock.getProduct().getId();
-            stockMap.put(key, stock);
+        if (warehouses == null || warehouses.isEmpty() || quotation.getLines() == null || quotation.getLines().isEmpty()) {
+            return result;
         }
 
-        // Sort warehouses by base freight * weight ascending
-        warehouses.sort(Comparator.comparing(w ->
-                w.getBaseFreight().multiply(w.getShippingCostWeight())));
+        // Defensive copy and sort warehouses by base freight * weight ascending
+        List<Warehouse> sortedWarehouses = new ArrayList<>(warehouses);
+        sortedWarehouses.sort(Comparator.comparing(w ->
+                (w.getBaseFreight() != null ? w.getBaseFreight() : BigDecimal.valueOf(20.00))
+                        .multiply(w.getShippingCostWeight() != null ? w.getShippingCostWeight() : BigDecimal.ONE)));
+
+        // Index available stock dynamically: warehouseId:productId -> available count
+        Map<String, Integer> availableMap = new HashMap<>();
+        for (WarehouseStock stock : allStocks) {
+            String key = stock.getWarehouse().getId() + ":" + stock.getProduct().getId();
+            availableMap.put(key, stock.getAvailable() != null ? stock.getAvailable() : 0);
+        }
 
         for (QuotationLine line : quotation.getLines()) {
             Product product = line.getProduct();
@@ -45,19 +51,19 @@ public class SplitOptimizer {
             if (product.getIsSubscription() != null && product.getIsSubscription()) {
                 continue;
             }
-            if ("Services".equalsIgnoreCase(product.getCategory().getName())) {
+            if (product.getCategory() != null && "Services".equalsIgnoreCase(product.getCategory().getName())) {
                 continue;
             }
 
-            int requiredQty = line.getQuantity();
+            int requiredQty = line.getQuantity() != null && line.getQuantity() > 0 ? line.getQuantity() : 1;
             int remainingQty = requiredQty;
 
             // 1. Check if any single warehouse can fulfill the full quantity
             Warehouse fullCoverageWarehouse = null;
-            for (Warehouse wh : warehouses) {
+            for (Warehouse wh : sortedWarehouses) {
                 String key = wh.getId() + ":" + product.getId();
-                WarehouseStock stock = stockMap.get(key);
-                if (stock != null && stock.getAvailable() >= requiredQty) {
+                int avail = availableMap.getOrDefault(key, 0);
+                if (avail >= requiredQty) {
                     fullCoverageWarehouse = wh;
                     break;
                 }
@@ -65,7 +71,13 @@ public class SplitOptimizer {
 
             if (fullCoverageWarehouse != null) {
                 // Fulfill entirely from this warehouse
-                BigDecimal freight = fullCoverageWarehouse.getBaseFreight().multiply(fullCoverageWarehouse.getShippingCostWeight());
+                String key = fullCoverageWarehouse.getId() + ":" + product.getId();
+                availableMap.put(key, availableMap.get(key) - requiredQty);
+
+                BigDecimal baseFreight = fullCoverageWarehouse.getBaseFreight() != null ? fullCoverageWarehouse.getBaseFreight() : BigDecimal.valueOf(20.00);
+                BigDecimal weight = fullCoverageWarehouse.getShippingCostWeight() != null ? fullCoverageWarehouse.getShippingCostWeight() : BigDecimal.ONE;
+                BigDecimal freight = baseFreight.multiply(weight);
+
                 FulfillmentSplit split = FulfillmentSplit.builder()
                         .quotationId(quotation.getId())
                         .warehouse(fullCoverageWarehouse)
@@ -81,14 +93,18 @@ public class SplitOptimizer {
                 utilizedWarehouseIds.add(fullCoverageWarehouse.getId());
             } else {
                 // Greedily split across candidate warehouses sorted by freight cost
-                for (Warehouse wh : warehouses) {
+                for (Warehouse wh : sortedWarehouses) {
                     if (remainingQty <= 0) break;
 
                     String key = wh.getId() + ":" + product.getId();
-                    WarehouseStock stock = stockMap.get(key);
-                    if (stock != null && stock.getAvailable() > 0) {
-                        int allocatable = Math.min(stock.getAvailable(), remainingQty);
-                        BigDecimal freight = wh.getBaseFreight().multiply(wh.getShippingCostWeight());
+                    int avail = availableMap.getOrDefault(key, 0);
+                    if (avail > 0) {
+                        int allocatable = Math.min(avail, remainingQty);
+                        availableMap.put(key, avail - allocatable);
+
+                        BigDecimal baseFreight = wh.getBaseFreight() != null ? wh.getBaseFreight() : BigDecimal.valueOf(20.00);
+                        BigDecimal weight = wh.getShippingCostWeight() != null ? wh.getShippingCostWeight() : BigDecimal.ONE;
+                        BigDecimal freight = baseFreight.multiply(weight);
 
                         FulfillmentSplit split = FulfillmentSplit.builder()
                                 .quotationId(quotation.getId())
@@ -110,7 +126,7 @@ public class SplitOptimizer {
                 // If stock is exhausted across all warehouses, create a backorder split
                 if (remainingQty > 0) {
                     result.hasBackorder = true;
-                    Warehouse primaryWh = warehouses.get(0);
+                    Warehouse primaryWh = sortedWarehouses.get(0);
 
                     FulfillmentSplit backorderSplit = FulfillmentSplit.builder()
                             .quotationId(quotation.getId())
