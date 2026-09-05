@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
@@ -215,7 +215,7 @@ interface StaffUserForm {
           <div class="form-row">
             <div class="form-group">
               <label class="form-label required">Role & Permissions</label>
-              <select class="form-control" [(ngModel)]="form.role">
+              <select class="form-control" [(ngModel)]="form.role" (ngModelChange)="onRoleChange($event)">
                 <option value="SALES_REP">Sales Representative (Quotes, Customers, Health)</option>
                 <option value="SALES_MANAGER">Sales Manager / Approver (Approvals L1, Analytics, Health)</option>
                 <option value="FINANCE">Finance Operations (Approvals L2, Invoices, Warehouses)</option>
@@ -254,7 +254,7 @@ interface StaffUserForm {
           <div class="role-preview-box">
             <div class="role-preview-title">Accessible Modules for {{ roleLabel(form.role) }}:</div>
             <div class="role-preview-list">
-              <span class="access-item" *ngFor="let a of roleAccess(form.role)" [class.yes]="a.has" [class.no]="!a.has">
+              <span class="access-item" *ngFor="let a of currentRoleAccess; trackBy: trackAccess" [class.yes]="a.has" [class.no]="!a.has">
                 {{ a.has ? '✓' : '✕' }} {{ a.label }}
               </span>
             </div>
@@ -556,20 +556,24 @@ export class UserManagementComponent implements OnInit, OnDestroy {
   summaryStatsList: any[] = [];
   pagedUsers: ManagedUser[] = [];
   pageNumbers: number[] = [];
+  currentRoleAccess: { label: string; has: boolean }[] = [];
 
   trackUser = (_: number, u: ManagedUser): number => u.id;
   trackPage = (_: number, p: number): number => p;
   trackStat = (_: number, s: { label: string }): string => s.label;
+  trackAccess = (_: number, a: { label: string }): string => a.label;
 
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit() {
     this.currentUserId = this.authService.currentUser?.id || 0;
+    this.currentRoleAccess = this.computeRoleAccess(this.form.role);
     this.subs.add(
       this.authService.managedUsers$.subscribe(users => {
         this.users = users || [];
         this.applyFilter();
         this.updateStats();
+        this.cdr.markForCheck();
       })
     );
     this.refreshUsers();
@@ -585,20 +589,28 @@ export class UserManagementComponent implements OnInit, OnDestroy {
         this.users = users || [];
         this.applyFilter();
         this.updateStats();
+        this.cdr.detectChanges();
       },
-      error: () => this.loading = false
+      error: () => {
+        this.loading = false;
+        this.cdr.detectChanges();
+      }
     });
   }
 
   // ─── Filter & Pagination ────────────────────────────────────────────────────
 
   applyFilter() {
-    const q = this.search.toLowerCase();
-    this.filtered = this.users.filter(u =>
-      (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
-      (!this.roleFilter   || u.role === this.roleFilter) &&
-      (!this.statusFilter || (this.statusFilter === 'ACTIVE' ? u.active : !u.active))
-    );
+    const q = (this.search || '').toLowerCase().trim();
+    this.filtered = (this.users || []).filter(u => {
+      if (!u) return false;
+      const name = (u.name || '').toLowerCase();
+      const email = (u.email || '').toLowerCase();
+      const roleMatch = !this.roleFilter || u.role === this.roleFilter;
+      const statusMatch = !this.statusFilter || (this.statusFilter === 'ACTIVE' ? u.active : !u.active);
+      const searchMatch = !q || name.includes(q) || email.includes(q);
+      return roleMatch && statusMatch && searchMatch;
+    });
     this.page = 1;
     this.updatePagination();
   }
@@ -626,21 +638,27 @@ export class UserManagementComponent implements OnInit, OnDestroy {
   // ─── Stats ──────────────────────────────────────────────────────────────────
 
   updateStats() {
+    const list = this.users || [];
     this.summaryStatsList = [
-      { label: 'Total Users',     value: this.users.length,                                          icon: '👥', bg: '#eff6ff', color: '#2563eb' },
-      { label: 'Sales Reps',      value: this.users.filter(u => u.role === 'SALES_REP').length,      icon: '💼', bg: '#f0fdf4', color: '#16a34a' },
-      { label: 'Sales Managers',  value: this.users.filter(u => u.role === 'SALES_MANAGER').length,  icon: '🛡️', bg: '#fffbeb', color: '#d97706' },
-      { label: 'Finance / RevOps',value: this.users.filter(u => u.role === 'FINANCE').length,        icon: '💰', bg: '#f5f3ff', color: '#7c3aed' },
+      { label: 'Total Users',      value: list.length,                                          icon: '👥', bg: '#eff6ff', color: '#2563eb' },
+      { label: 'Sales Reps',       value: list.filter(u => u.role === 'SALES_REP').length,      icon: '💼', bg: '#f0fdf4', color: '#16a34a' },
+      { label: 'Sales Managers',   value: list.filter(u => u.role === 'SALES_MANAGER').length,  icon: '🛡️', bg: '#fffbeb', color: '#d97706' },
+      { label: 'Finance / RevOps', value: list.filter(u => u.role === 'FINANCE').length,        icon: '💰', bg: '#f5f3ff', color: '#7c3aed' },
     ];
   }
 
   // ─── Actions ─────────────────────────────────────────────────────────────────
+
+  onRoleChange(role: string) {
+    this.currentRoleAccess = this.computeRoleAccess(role);
+  }
 
   openCreate() {
     this.editMode = false;
     this.editingId = null;
     this.form = this.blankForm();
     this.formError = '';
+    this.currentRoleAccess = this.computeRoleAccess(this.form.role);
     this.modalOpen = true;
   }
 
@@ -652,25 +670,31 @@ export class UserManagementComponent implements OnInit, OnDestroy {
       email: u.email,
       password: '',
       role: u.role,
-      team: u.team,
+      team: u.team || '',
       autoGeneratePassword: false
     };
     this.formError = '';
+    this.currentRoleAccess = this.computeRoleAccess(this.form.role);
     this.modalOpen = true;
   }
 
-  closeModal() { this.modalOpen = false; }
+  closeModal() {
+    this.modalOpen = false;
+    this.submitting = false;
+  }
 
   submitForm() {
     this.formError = '';
 
     if (!this.form.name.trim() || !this.form.email.trim()) {
-      this.formError = 'Name and email are required.'; return;
+      this.formError = 'Name and email are required.';
+      return;
     }
 
     if (!this.editMode && !this.form.autoGeneratePassword) {
       if (!this.form.password || this.form.password.length < 6) {
-        this.formError = 'Password must be at least 6 characters.'; return;
+        this.formError = 'Password must be at least 6 characters.';
+        return;
       }
     }
 
@@ -678,19 +702,21 @@ export class UserManagementComponent implements OnInit, OnDestroy {
 
     if (this.editMode && this.editingId !== null) {
       this.authService.updateUser(this.editingId, {
-        name: this.form.name,
+        name: this.form.name.trim(),
         role: this.form.role,
-        team: this.form.team
+        team: this.form.team.trim()
       }).subscribe({
         next: () => {
           this.submitting = false;
-          this.closeModal();
-          this.refreshUsers();
+          this.modalOpen = false;
           this.showToast('User updated successfully.', 'success');
+          this.refreshUsers();
+          this.cdr.detectChanges();
         },
         error: (err) => {
           this.submitting = false;
           this.formError = err?.error?.error || 'Failed to update user.';
+          this.cdr.detectChanges();
         }
       });
     } else {
@@ -705,16 +731,18 @@ export class UserManagementComponent implements OnInit, OnDestroy {
       this.authService.createStaffUser(payload).subscribe({
         next: (resp) => {
           this.submitting = false;
-          this.closeModal();
-          this.refreshUsers();
+          this.modalOpen = false;
           this.createdUserCreds = resp;
           this.credentialsModalOpen = true;
           this.copied = false;
           this.showToast('Staff user created & credentials dispatched.', 'success');
+          this.refreshUsers();
+          this.cdr.detectChanges();
         },
         error: (err) => {
           this.submitting = false;
           this.formError = err?.error?.error || 'Failed to create user. Email may already be registered.';
+          this.cdr.detectChanges();
         }
       });
     }
@@ -729,8 +757,12 @@ export class UserManagementComponent implements OnInit, OnDestroy {
       next: () => {
         this.refreshUsers();
         this.showToast(`${u.name} has been ${action}d.`, 'success');
+        this.cdr.detectChanges();
       },
-      error: () => this.showToast('Failed to update user status.', 'error')
+      error: () => {
+        this.showToast('Failed to update user status.', 'error');
+        this.cdr.detectChanges();
+      }
     });
   }
 
@@ -751,8 +783,12 @@ export class UserManagementComponent implements OnInit, OnDestroy {
         this.credentialsModalOpen = true;
         this.copied = false;
         this.showToast(`Password reset for ${u.name}.`, 'success');
+        this.cdr.detectChanges();
       },
-      error: () => this.showToast('Failed to reset password.', 'error')
+      error: () => {
+        this.showToast('Failed to reset password.', 'error');
+        this.cdr.detectChanges();
+      }
     });
   }
 
@@ -760,7 +796,10 @@ export class UserManagementComponent implements OnInit, OnDestroy {
     if (!pw) return;
     navigator.clipboard.writeText(pw);
     this.copied = true;
-    setTimeout(() => this.copied = false, 2000);
+    setTimeout(() => {
+      this.copied = false;
+      this.cdr.detectChanges();
+    }, 2000);
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -777,8 +816,8 @@ export class UserManagementComponent implements OnInit, OnDestroy {
   }
 
   initials(name: string): string {
-    const p = (name || '').split(' ');
-    return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase();
+    const p = (name || '').trim().split(/\s+/);
+    return ((p[0]?.[0] || '') + (p[1]?.[0] || '')).toUpperCase() || 'U';
   }
 
   roleLabel(role: string): string {
@@ -789,7 +828,7 @@ export class UserManagementComponent implements OnInit, OnDestroy {
       FINANCE: 'Finance Operations',
       CUSTOMER: 'Customer'
     };
-    return map[role] || role;
+    return map[role] || role || 'User';
   }
 
   roleBadge(role: string): string {
@@ -814,7 +853,7 @@ export class UserManagementComponent implements OnInit, OnDestroy {
     return map[role] || '#475569';
   }
 
-  roleAccess(role: string): { label: string; has: boolean }[] {
+  computeRoleAccess(role: string): { label: string; has: boolean }[] {
     const all = ['Dashboard', 'Quotations', 'Approvals', 'Fulfillment', 'Subscription', 'Invoices', 'Deal Health', 'Reports', 'User Admin'];
     const access: Record<string, string[]> = {
       ADMIN:         all,
@@ -830,6 +869,10 @@ export class UserManagementComponent implements OnInit, OnDestroy {
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toast = msg;
     this.toastType = type;
-    this.toastTimer = setTimeout(() => this.toast = null, 3500);
+    this.cdr.detectChanges();
+    this.toastTimer = setTimeout(() => {
+      this.toast = null;
+      this.cdr.detectChanges();
+    }, 3500);
   }
 }
