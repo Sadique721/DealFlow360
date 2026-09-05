@@ -559,7 +559,7 @@ export class LoginComponent implements OnInit {
         return;
       }
       this.signupSuccess = 'Customer account registered successfully! Redirecting to portal...';
-      setTimeout(() => this.router.navigate(['/portal/CUST-TOKEN-ACME']), 1000);
+      setTimeout(() => this.router.navigate(['/portal/magic-token-acme-1042-demo']), 1000);
     } catch {
       this.signupLoading = false;
       this.signupError = 'Registration failed. Please try again.';
@@ -571,7 +571,7 @@ export class LoginComponent implements OnInit {
   private async redirectAfterLogin() {
     const role = this.authService.currentRole;
     if (role === 'CUSTOMER') {
-      await this.router.navigate(['/portal/CUST-TOKEN-ACME']);
+      await this.router.navigate(['/portal/magic-token-acme-1042-demo']);
     } else {
       const target = (this.returnUrl && !this.returnUrl.includes('/login') && !this.returnUrl.includes('/unauthorized'))
         ? this.returnUrl

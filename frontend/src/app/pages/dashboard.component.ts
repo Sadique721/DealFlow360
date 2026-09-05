@@ -642,7 +642,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.currentRole = role;
           this.updateVisibleNavItems(role);
           if (role === 'CUSTOMER') {
-            this.router.navigate(['/portal/CUST-TOKEN-ACME']);
+            this.router.navigate(['/portal/magic-token-acme-1042-demo']);
           }
         }
       })

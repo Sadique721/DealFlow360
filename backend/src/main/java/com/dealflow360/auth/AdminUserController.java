@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import com.dealflow360.mail.EmailService;
 
 import java.security.SecureRandom;
 import java.util.List;
@@ -42,10 +43,12 @@ public class AdminUserController {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
 
-    public AdminUserController(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AdminUserController(UserRepository userRepository, PasswordEncoder passwordEncoder, EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
     }
 
     // ─── DTOs ──────────────────────────────────────────────────────────────────
@@ -127,8 +130,8 @@ public class AdminUserController {
         log.info("[AdminUserController] New {} user created by {}: {} <{}>  TempPw: {}",
                 req.role(), creator, req.name(), req.email(), plainPassword);
 
-        // In production: trigger email here
-        // emailService.sendWelcomeEmail(saved.getEmail(), saved.getName(), plainPassword);
+        // Trigger async welcome email with temporary credentials
+        emailService.sendWelcomeEmail(saved.getEmail(), saved.getName(), plainPassword, saved.getRole(), saved.getTeam());
 
         return ResponseEntity.ok(new CreateUserResponse(
                 saved.getId(),
@@ -187,6 +190,7 @@ public class AdminUserController {
                     userRepository.save(user);
                     log.info("[AdminUserController] Password reset for user {} <{}>  NewPw: {}",
                             user.getName(), user.getEmail(), newPw);
+                    emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), newPw);
                     return ResponseEntity.ok(Map.of(
                             "message", "Password reset successfully.",
                             "tempPassword", newPw,

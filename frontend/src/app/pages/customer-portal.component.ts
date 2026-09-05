@@ -1,13 +1,14 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ApiService } from '../services/api.service';
+import { AuthService } from '../services/auth.service';
 
 @Component({
   selector: 'app-customer-portal',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterModule],
   template: `
     <div class="portal-wrapper" *ngIf="portalData">
       <!-- Portal Top Header -->
@@ -16,19 +17,22 @@ import { ApiService } from '../services/api.service';
           <span class="logo-mark">⚡</span>
           <div>
             <h2>DealFlow360 Customer Quoting Portal</h2>
-            <p class="sub">Official Commercial Proposal for {{ portalData.customerName }}</p>
+            <p class="sub">Official Commercial Proposal for {{ portalData.customerName || 'Valued Customer' }}</p>
           </div>
         </div>
         <div class="header-right">
-          <span class="mono quote-pill">{{ portalData.quoteNumber }}</span>
+          <span class="mono quote-pill">{{ portalData.quoteNumber || 'Q-1042' }}</span>
           <span
             class="badge"
             [class.badge-info]="portalData.status === 'UNDER_NEGOTIATION' || portalData.status === 'SENT_TO_CUSTOMER'"
             [class.badge-warning]="portalData.status === 'PENDING_APPROVAL'"
             [class.badge-success]="portalData.status === 'CONFIRMED' || portalData.status === 'ACCEPTED'"
           >
-            {{ portalData.status.replace('_', ' ') }}
+            {{ (portalData.status || 'UNDER_NEGOTIATION').replace('_', ' ') }}
           </span>
+          <button class="btn-exit" (click)="signOut()" title="Exit portal and go to login">
+            Sign Out ↗
+          </button>
         </div>
       </header>
 
@@ -61,12 +65,12 @@ import { ApiService } from '../services/api.service';
                   <tr *ngFor="let item of portalData.lines">
                     <td>
                       <strong>{{ item.productName }}</strong>
-                      <div class="sub">{{ item.description || 'Enterprise Tier Solution' }}</div>
+                      <div class="sub">{{ item.description || item.categoryName || 'Enterprise Tier Solution' }}</div>
                     </td>
                     <td class="mono">{{ item.quantity }}</td>
-                    <td class="mono">{{ formatCurrency(item.unitListPrice) }}</td>
+                    <td class="mono">{{ formatCurrency(item.unitPrice || item.unitListPrice) }}</td>
                     <td>
-                      <span class="badge badge-success">{{ item.unitDiscountPct | number:'1.1-1' }}% Off</span>
+                      <span class="badge badge-success">{{ (item.discountPercent !== undefined ? item.discountPercent : item.unitDiscountPct) | number:'1.1-1' }}% Off</span>
                     </td>
                     <td class="mono font-bold">{{ formatCurrency(item.lineTotal) }}</td>
                   </tr>
@@ -86,7 +90,7 @@ import { ApiService } from '../services/api.service';
               </div>
               <div class="total-line">
                 <span>Estimated Freight & Handling:</span>
-                <span class="mono">{{ formatCurrency(portalData.shippingAmount) }}</span>
+                <span class="mono">{{ formatCurrency(portalData.shippingAmount || 0) }}</span>
               </div>
               <div class="total-line grand-total">
                 <span>Total Amount Due:</span>
@@ -109,9 +113,12 @@ import { ApiService } from '../services/api.service';
               >
                 <div class="msg-header">
                   <span class="sender-name font-bold">{{ m.senderName }} ({{ m.senderRole }})</span>
-                  <span class="msg-time mono">{{ m.createdAt | date:'shortTime' }}</span>
+                  <span class="msg-time mono">{{ m.timestamp || (m.createdAt ? (m.createdAt | date:'shortTime') : 'Recent') }}</span>
                 </div>
                 <div class="msg-text">{{ m.message }}</div>
+              </div>
+              <div *ngIf="!portalData.messages || portalData.messages.length === 0" class="no-msgs-notice">
+                No discussion messages yet. Use the box below to ask questions or propose revisions.
               </div>
             </div>
 
@@ -122,7 +129,7 @@ import { ApiService } from '../services/api.service';
                 placeholder="Type your message, line questions, or revision request to the sales team..."
                 [(ngModel)]="newMessage"
               ></textarea>
-              <button class="btn btn-outline" (click)="sendMessage()" [disabled]="!newMessage.trim()">
+              <button class="btn btn-primary btn-sm mt-2" (click)="sendMessage()" [disabled]="!newMessage.trim()">
                 Send Message
               </button>
             </div>
@@ -176,7 +183,9 @@ import { ApiService } from '../services/api.service';
       display: flex;
       flex-direction: column;
       gap: 18px;
-      padding: 10px 0;
+      padding: 24px 16px;
+      min-height: 100vh;
+      color: var(--text-primary, #0f172a);
     }
     .portal-header {
       padding: 18px 24px;
@@ -192,6 +201,11 @@ import { ApiService } from '../services/api.service';
       align-items: center;
       gap: 14px;
     }
+    .brand h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary, #0f172a);
+    }
     .logo-mark { font-size: 30px; }
     .header-right {
       display: flex;
@@ -201,7 +215,25 @@ import { ApiService } from '../services/api.service';
     .quote-pill {
       font-size: 16px;
       font-weight: 700;
-      color: #38bdf8;
+      color: #2563eb;
+      background: #eff6ff;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+    .btn-exit {
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-exit:hover {
+      background: #e2e8f0;
+      color: #0f172a;
     }
 
     .zero-leakage-notice {
@@ -211,8 +243,8 @@ import { ApiService } from '../services/api.service';
       gap: 12px;
       background: rgba(16, 185, 129, 0.08);
       border: 1px solid rgba(16, 185, 129, 0.25);
-      border-radius: var(--radius-sm);
-      color: #6ee7b7;
+      border-radius: var(--radius-sm, 6px);
+      color: #047857;
       font-size: 13px;
     }
     .lock-icon { font-size: 18px; }
@@ -233,13 +265,18 @@ import { ApiService } from '../services/api.service';
     .items-card, .chat-card, .counter-card, .accept-card {
       padding: 20px;
     }
+    .sub {
+      color: #64748b;
+      font-size: 13px;
+      margin-top: 2px;
+    }
     .totals-box {
       margin-top: 20px;
       display: flex;
       flex-direction: column;
       gap: 8px;
       align-items: flex-end;
-      border-top: 1px solid var(--border-subtle);
+      border-top: 1px solid var(--border-light, #e2e8f0);
       padding-top: 14px;
     }
     .total-line {
@@ -249,11 +286,11 @@ import { ApiService } from '../services/api.service';
     }
     .grand-total {
       font-size: 18px;
-      color: var(--text-main);
-      border-top: 1px solid var(--border-subtle);
+      color: var(--text-primary, #0f172a);
+      border-top: 1px solid var(--border-light, #e2e8f0);
       padding-top: 6px;
     }
-    .val { color: #38bdf8; font-size: 22px; }
+    .val { color: #2563eb; font-size: 22px; }
     .message-feed {
       display: flex;
       flex-direction: column;
@@ -262,20 +299,28 @@ import { ApiService } from '../services/api.service';
       max-height: 280px;
       overflow-y: auto;
     }
+    .no-msgs-notice {
+      padding: 16px;
+      text-align: center;
+      color: #94a3b8;
+      font-size: 13px;
+      border: 1px dashed #e2e8f0;
+      border-radius: 6px;
+    }
     .chat-msg {
       padding: 12px;
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-sm, 6px);
       font-size: 13px;
     }
     .msg-customer {
-      background: rgba(59, 130, 246, 0.15);
-      border: 1px solid rgba(59, 130, 246, 0.35);
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
       align-self: flex-end;
       max-width: 85%;
     }
     .msg-rep {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border-subtle);
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
       align-self: flex-start;
       max-width: 85%;
     }
@@ -293,12 +338,12 @@ import { ApiService } from '../services/api.service';
       align-items: flex-end;
     }
     .alert-info-box {
-      background: rgba(245, 158, 11, 0.12);
-      border: 1px solid rgba(245, 158, 11, 0.3);
-      border-radius: var(--radius-sm);
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: var(--radius-sm, 6px);
       padding: 10px;
       font-size: 11px;
-      color: #fbbf24;
+      color: #b45309;
       line-height: 1.4;
     }
     .btn-block { width: 100%; }
@@ -308,51 +353,45 @@ import { ApiService } from '../services/api.service';
   `]
 })
 export class CustomerPortalComponent implements OnInit {
-  token = 'token-zenith-1042';
-  portalData: any;
+  token = 'magic-token-acme-1042-demo';
   newMessage = '';
   counterDiscountPct?: number;
 
   fallbackZenithPortalData = {
-    quoteNumber: 'Q-2026-1042',
-    customerName: 'Zenith Systems Global Enterprise',
+    quoteNumber: 'Q-1042',
+    customerName: 'Acme Corp (Enterprise Partner)',
     status: 'UNDER_NEGOTIATION',
-    subtotalAmount: 184500,
-    totalDiscountAmount: 22140,
-    shippingAmount: 1450,
-    totalAmount: 163810,
+    subtotalAmount: 1696.00,
+    totalDiscountAmount: 229.20,
+    shippingAmount: 0,
+    totalAmount: 1466.80,
     lines: [
       {
-        productName: 'High-Throughput Ground Satellite Gateway 4U',
-        description: 'Enterprise 4U Ku/Ka-Band Ground Gateway Module',
-        quantity: 8,
-        unitListPrice: 12500,
-        unitDiscountPct: 12.0,
-        lineTotal: 88000
-      },
-      {
-        productName: 'Titan Edge Multi-Cloud Server Blade 2U',
-        description: 'High-density computational node with redundant power',
-        quantity: 6,
-        unitListPrice: 8400,
-        unitDiscountPct: 12.0,
-        lineTotal: 44352
-      },
-      {
-        productName: 'Autonomous CPQ AI Governance Engine (Annual)',
-        description: 'Multi-tenant self-governing sales operations cloud',
+        productName: 'Laptop Pro 14',
+        description: 'Enterprise 14-inch Performance Laptop',
+        categoryName: 'Hardware',
         quantity: 1,
-        unitListPrice: 36000,
-        unitDiscountPct: 15.0,
-        lineTotal: 30600
+        unitPrice: 1200.00,
+        discountPercent: 12.0,
+        lineTotal: 1056.00
       },
       {
-        productName: 'Principal Enterprise Solution Architect (4 Weeks)',
-        description: 'Dedicated onsite design and deployment architecture lead',
+        productName: 'Onsite Setup Service',
+        description: 'Professional enterprise deployment & configuration',
+        categoryName: 'Services',
         quantity: 1,
-        unitListPrice: 20000,
-        unitDiscountPct: 10.0,
-        lineTotal: 18000
+        unitPrice: 450.00,
+        discountPercent: 18.0,
+        lineTotal: 369.00
+      },
+      {
+        productName: 'Care Plan 2yr',
+        description: '24/7 SLA Priority Enterprise Support (Monthly)',
+        categoryName: 'Subscriptions',
+        quantity: 1,
+        unitPrice: 46.00,
+        discountPercent: 9.13,
+        lineTotal: 41.80
       }
     ],
     messages: [
@@ -360,27 +399,27 @@ export class CustomerPortalComponent implements OnInit {
         id: 1,
         senderName: 'Jay Rao (DealFlow360)',
         senderRole: 'SALES_REP',
-        message: 'Hello Sarah, here is the updated proposal including the Ground Satellite Gateways and Annual CPQ AI Governance. Please let us know if you need any adjustments.',
-        createdAt: new Date(Date.now() - 7200000).toISOString()
-      },
-      {
-        id: 2,
-        senderName: 'Sarah Chen (Zenith Systems)',
-        senderRole: 'CUSTOMER',
-        message: 'Thanks Jay. We are reviewing the gateway hardware quantities. Can you match 15% discount across the whole package if we commit this quarter?',
-        createdAt: new Date(Date.now() - 3600000).toISOString()
+        message: 'Hello! Here is your custom proposal tailored for your operations. Feel free to review or negotiate terms right here.',
+        timestamp: 'Today 10:30'
       }
     ]
   };
 
+  portalData: any = this.fallbackZenithPortalData;
+
   constructor(
     private route: ActivatedRoute,
-    private api: ApiService
+    private router: Router,
+    private api: ApiService,
+    private authService: AuthService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
     const routeToken = this.route.snapshot.paramMap.get('token');
-    if (routeToken) this.token = routeToken;
+    if (routeToken) {
+      this.token = routeToken;
+    }
     this.loadPortalData();
   }
 
@@ -392,30 +431,36 @@ export class CustomerPortalComponent implements OnInit {
         } else {
           this.portalData = this.fallbackZenithPortalData;
         }
+        this.cdr.detectChanges();
       },
       error: () => {
         this.portalData = this.fallbackZenithPortalData;
+        this.cdr.detectChanges();
       }
     });
   }
 
   sendMessage(): void {
     if (!this.newMessage.trim()) return;
+    const currentUser = this.authService.currentUser;
+    const senderName = currentUser && currentUser.name ? `${currentUser.name} (Customer)` : 'Customer Buyer';
     const msg = {
       id: Date.now(),
-      senderName: 'Sarah Chen (Zenith Systems)',
+      senderName,
       senderRole: 'CUSTOMER',
       message: this.newMessage.trim(),
-      createdAt: new Date().toISOString()
+      timestamp: 'Just now'
     };
     if (!this.portalData.messages) this.portalData.messages = [];
     this.portalData.messages.push(msg);
+    const text = this.newMessage.trim();
     this.newMessage = '';
+    this.cdr.detectChanges();
 
     this.api.post<any>(`portal/quotations/${this.token}/message`, {
-      message: msg.message,
+      message: text,
       requestedDiscountPct: null,
-      notes: 'Customer discussion message'
+      notes: 'Customer portal message'
     }).subscribe({
       next: () => {},
       error: () => {}
@@ -428,17 +473,18 @@ export class CustomerPortalComponent implements OnInit {
     const newSubtotal = this.portalData.subtotalAmount;
     const newDisc = Math.round(newSubtotal * (discPct / 100));
     this.portalData.totalDiscountAmount = newDisc;
-    this.portalData.totalAmount = (newSubtotal - newDisc) + this.portalData.shippingAmount;
+    this.portalData.totalAmount = (newSubtotal - newDisc) + (this.portalData.shippingAmount || 0);
     this.portalData.status = 'PENDING_APPROVAL';
 
     if (!this.portalData.messages) this.portalData.messages = [];
     this.portalData.messages.push({
       id: Date.now(),
-      senderName: 'Sarah Chen (Zenith Systems)',
+      senderName: 'Customer Buyer',
       senderRole: 'CUSTOMER',
       message: `Submitted counter-discount request: ${discPct}%. Revised proposal amount: ${this.formatCurrency(this.portalData.totalAmount)}.`,
-      createdAt: new Date().toISOString()
+      timestamp: 'Just now'
     });
+    this.cdr.detectChanges();
 
     this.api.post<any>(`portal/quotations/${this.token}/message`, {
       message: `Counter-offer of ${discPct}% requested`,
@@ -454,11 +500,17 @@ export class CustomerPortalComponent implements OnInit {
 
   acceptQuote(): void {
     this.portalData.status = 'CONFIRMED';
+    this.cdr.detectChanges();
     this.api.post<any>(`portal/quotations/${this.token}/confirm`, {}).subscribe({
       next: () => {},
       error: () => {}
     });
-    alert('🎉 Thank you! Commercial terms accepted and signed. Order Q-2026-1042 confirmed and dispatched to fulfillment.');
+    alert('🎉 Thank you! Commercial terms accepted and signed. Order confirmed and dispatched to fulfillment.');
+  }
+
+  signOut(): void {
+    this.authService.logout();
+    this.router.navigate(['/login']);
   }
 
   formatCurrency(val: number): string {
