@@ -18,6 +18,11 @@ public class AuditService {
 
     public void log(String entityType, Long entityId, String action, String performedBy,
                     String beforeState, String afterState, String reason, BigDecimal marginDelta) {
+        BigDecimal safeDelta = marginDelta;
+        if (safeDelta != null && safeDelta.abs().compareTo(BigDecimal.valueOf(999.99)) > 0) {
+            safeDelta = safeDelta.compareTo(BigDecimal.ZERO) >= 0 ? BigDecimal.valueOf(999.99) : BigDecimal.valueOf(-999.99);
+        }
+
         AuditLog entry = AuditLog.builder()
                 .entityType(entityType)
                 .entityId(entityId)
@@ -26,7 +31,7 @@ public class AuditService {
                 .beforeState(beforeState)
                 .afterState(afterState)
                 .reason(reason)
-                .marginDelta(marginDelta)
+                .marginDelta(safeDelta)
                 .build();
         auditLogRepository.save(entry);
     }

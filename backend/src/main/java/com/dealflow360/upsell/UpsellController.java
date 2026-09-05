@@ -1,5 +1,6 @@
 package com.dealflow360.upsell;
 
+import com.dealflow360.quotation.Quotation;
 import com.dealflow360.upsell.dto.UpsellSuggestion;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,5 +36,11 @@ public class UpsellController {
     @Operation(summary = "Create a new upsell rule")
     public ResponseEntity<UpsellRule> createRule(@RequestBody UpsellRule rule) {
         return ResponseEntity.ok(upsellService.createRule(rule));
+    }
+
+    @PostMapping("/apply")
+    @Operation(summary = "Apply an upsell suggestion to a quotation")
+    public ResponseEntity<Quotation> applyUpsell(@RequestParam Long quotationId, @RequestParam Long ruleId) {
+        return ResponseEntity.ok(upsellService.applyUpsell(quotationId, ruleId));
     }
 }

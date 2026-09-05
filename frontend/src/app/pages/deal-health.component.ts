@@ -1,11 +1,10 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { DealHealthService } from '../services/dealhealth.service';
 import { AuthService } from '../services/auth.service';
-import { DealHealthFlag, Quotation } from '../models/dealflow.model';
-import { generate120HealthFlags, generate120Quotations } from '../services/mock-data';
+import { DealHealthFlag } from '../models/dealflow.model';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -477,7 +476,7 @@ export class DealHealthComponent implements OnInit, OnDestroy {
   // Sort & Pagination
   sortColumn = 'id';
   sortDirection: 'asc' | 'desc' = 'asc';
-  pageSize = 25;
+  pageSize = 10;
   currentPage = 1;
 
   // RBAC
@@ -488,12 +487,13 @@ export class DealHealthComponent implements OnInit, OnDestroy {
 
   constructor(
     private healthService: DealHealthService,
-    private authService: AuthService
+    private authService: AuthService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
-    const quotes = generate120Quotations();
-    this.allFlags = generate120HealthFlags(quotes);
+    // Load real DB flags via API
+    this.loadFlags();
 
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
@@ -506,6 +506,19 @@ export class DealHealthComponent implements OnInit, OnDestroy {
         this.currentUserName = user.name;
       })
     );
+  }
+
+  loadFlags(): void {
+    this.healthService.getActiveFlags().subscribe({
+      next: (flags) => {
+        this.allFlags = flags || [];
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.allFlags = [];
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   ngOnDestroy(): void {

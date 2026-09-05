@@ -83,8 +83,8 @@ public class SecurityConfig {
                 // This is a secondary defense layer
                 .requestMatchers(HttpMethod.POST, "/api/approvals/act").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE")
 
-                // ── INVOICE ENDPOINTS: FINANCE + ADMIN ───────────────────────
-                .requestMatchers("/api/invoices/**").hasAnyRole("ADMIN", "FINANCE")
+                // ── INVOICE ENDPOINTS: FINANCE + MANAGER + ADMIN ────────────
+                .requestMatchers("/api/invoices/**").hasAnyRole("ADMIN", "FINANCE", "SALES_MANAGER")
 
                 // ── WAREHOUSE ENDPOINTS: FINANCE + MANAGER + ADMIN ───────────
                 .requestMatchers("/api/warehouses/**").hasAnyRole("ADMIN", "SALES_MANAGER", "FINANCE")

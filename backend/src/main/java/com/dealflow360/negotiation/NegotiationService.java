@@ -209,11 +209,7 @@ public class NegotiationService {
         // CRITICAL STATE LOOP:
         // If final terms exceed approval thresholds, quotation automatically re-locks and re-enters approval flow!
         if (risk.getRequiresApproval()) {
-            quote.setStatus("PENDING_APPROVAL");
-            quote.setLastActivityAt(LocalDateTime.now());
-            quotationRepository.save(quote);
-
-            // Re-trigger approval routing
+            // Re-trigger approval routing (automatically sets status to PENDING_APPROVAL)
             quotationService.submitForApproval(quote.getId(), confirmedBy != null ? confirmedBy : "Customer Portal (Counter)");
 
             auditService.log("QUOTATION", quote.getId(), "COUNTER_RE_APPROVAL_TRIGGERED", confirmedBy,

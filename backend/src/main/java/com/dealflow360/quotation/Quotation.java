@@ -2,10 +2,12 @@ package com.dealflow360.quotation;
 
 import com.dealflow360.auth.User;
 import com.dealflow360.catalog.Customer;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -90,4 +92,42 @@ public class Quotation {
     @OneToMany(mappedBy = "quotation", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @Builder.Default
     private List<QuotationLine> lines = new ArrayList<>();
+
+    @JsonProperty("marginPct")
+    public BigDecimal getMarginPct() {
+        return marginPercentage != null ? marginPercentage : BigDecimal.ZERO;
+    }
+
+    @JsonProperty("riskScore")
+    public BigDecimal getRiskScore() {
+        return blendedRiskScore != null ? blendedRiskScore : BigDecimal.ZERO;
+    }
+
+    @JsonProperty("blendedDiscountPct")
+    public BigDecimal getBlendedDiscountPct() {
+        if (subtotalAmount != null && subtotalAmount.compareTo(BigDecimal.ZERO) > 0 && totalDiscountAmount != null) {
+            return totalDiscountAmount.multiply(BigDecimal.valueOf(100)).divide(subtotalAmount, 2, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
+
+    @JsonProperty("requiresManagerApproval")
+    public Boolean getRequiresManagerApproval() {
+        return blendedRiskScore != null && blendedRiskScore.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    @JsonProperty("requiresFinanceApproval")
+    public Boolean getRequiresFinanceApproval() {
+        if (blendedRiskScore != null && blendedRiskScore.compareTo(BigDecimal.valueOf(10.0)) > 0) {
+            return true;
+        }
+        if (lines != null) {
+            for (QuotationLine line : lines) {
+                if (line.getOveragePoints() != null && line.getOveragePoints().compareTo(BigDecimal.valueOf(8.0)) > 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 }

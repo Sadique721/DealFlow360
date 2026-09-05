@@ -105,4 +105,83 @@ public class UpsellService {
     public UpsellRule createRule(UpsellRule rule) {
         return upsellRuleRepository.save(rule);
     }
+
+    public Quotation applyUpsell(Long quotationId, Long ruleId) {
+        Quotation quotation = quotationRepository.findById(quotationId)
+                .orElseThrow(() -> new RuntimeException("Quotation not found: " + quotationId));
+        UpsellRule rule = upsellRuleRepository.findById(ruleId)
+                .orElseThrow(() -> new RuntimeException("UpsellRule not found: " + ruleId));
+
+        Product suggested = rule.getSuggestedProduct();
+        BigDecimal promoDiscount = rule.getPromoDiscountPercent() != null ? rule.getPromoDiscountPercent() : BigDecimal.ZERO;
+
+        Optional<QuotationLine> existingLineOpt = quotation.getLines().stream()
+                .filter(l -> l.getProduct() != null && l.getProduct().getId().equals(suggested.getId()))
+                .findFirst();
+
+        if (existingLineOpt.isPresent()) {
+            QuotationLine existing = existingLineOpt.get();
+            existing.setQuantity(existing.getQuantity() + 1);
+            if (promoDiscount.compareTo(BigDecimal.ZERO) > 0) {
+                existing.setDiscountPercent(promoDiscount);
+            }
+        } else {
+            QuotationLine line = QuotationLine.builder()
+                    .quotation(quotation)
+                    .product(suggested)
+                    .quantity(1)
+                    .unitPrice(suggested.getBasePrice())
+                    .discountPercent(promoDiscount)
+                    .costPrice(suggested.getCostPrice())
+                    .lineType(Boolean.TRUE.equals(suggested.getIsSubscription()) ? "RECURRING" : "ONE_TIME")
+                    .build();
+            quotation.getLines().add(line);
+        }
+
+        recalculateTotals(quotation);
+        return quotationRepository.save(quotation);
+    }
+
+    private void recalculateTotals(Quotation quotation) {
+        BigDecimal subtotal = BigDecimal.ZERO;
+        BigDecimal totalDiscountAmount = BigDecimal.ZERO;
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        BigDecimal totalCost = BigDecimal.ZERO;
+
+        for (QuotationLine line : quotation.getLines()) {
+            Product p = line.getProduct();
+            int qty = line.getQuantity() != null ? line.getQuantity() : 1;
+            BigDecimal unitPrice = line.getUnitPrice() != null ? line.getUnitPrice() : (p != null ? p.getBasePrice() : BigDecimal.ZERO);
+            BigDecimal costPrice = line.getCostPrice() != null ? line.getCostPrice() : (p != null && p.getCostPrice() != null ? p.getCostPrice() : BigDecimal.ZERO);
+            BigDecimal discountPct = line.getDiscountPercent() != null ? line.getDiscountPercent() : BigDecimal.ZERO;
+
+            BigDecimal gross = unitPrice.multiply(BigDecimal.valueOf(qty));
+            BigDecimal discountFactor = discountPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+            BigDecimal discountAmt = gross.multiply(discountFactor).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal lineTotal = gross.subtract(discountAmt).setScale(2, RoundingMode.HALF_UP);
+
+            BigDecimal lineCost = costPrice.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal marginAmt = lineTotal.subtract(lineCost).setScale(2, RoundingMode.HALF_UP);
+
+            line.setLineTotal(lineTotal);
+            line.setMarginAmount(marginAmt);
+
+            subtotal = subtotal.add(gross);
+            totalDiscountAmount = totalDiscountAmount.add(discountAmt);
+            totalAmount = totalAmount.add(lineTotal);
+            totalCost = totalCost.add(lineCost);
+        }
+
+        BigDecimal totalMarginAmount = totalAmount.subtract(totalCost);
+        BigDecimal marginPct = totalAmount.compareTo(BigDecimal.ZERO) > 0
+                ? totalMarginAmount.divide(totalAmount, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        quotation.setSubtotalAmount(subtotal.setScale(2, RoundingMode.HALF_UP));
+        quotation.setTotalDiscountAmount(totalDiscountAmount.setScale(2, RoundingMode.HALF_UP));
+        quotation.setTotalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
+        quotation.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
+        quotation.setTotalMarginAmount(totalMarginAmount.setScale(2, RoundingMode.HALF_UP));
+        quotation.setMarginPercentage(marginPct);
+    }
 }

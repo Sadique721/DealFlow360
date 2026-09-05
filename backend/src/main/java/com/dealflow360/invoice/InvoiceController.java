@@ -59,4 +59,12 @@ public class InvoiceController {
             @RequestParam String deliveryStatus) {
         return ResponseEntity.ok(invoiceService.updateDeliveryStatus(id, deliveryStatus));
     }
+
+    @PostMapping("/{id}/void")
+    @Operation(summary = "Void an outstanding invoice")
+    public ResponseEntity<Invoice> voidInvoice(
+            @PathVariable Long id,
+            @RequestParam(required = false) String reason) {
+        return ResponseEntity.ok(invoiceService.voidInvoice(id, reason));
+    }
 }

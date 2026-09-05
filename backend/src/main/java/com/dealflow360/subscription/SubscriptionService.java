@@ -323,4 +323,36 @@ public class SubscriptionService {
 
         return overview;
     }
+
+    public Map<String, Object> previewProrationForQuotation(Long quotationId, int newQuantity, LocalDate changeDate) {
+        List<Subscription> subs = subscriptionRepository.findByQuotationId(quotationId);
+        if (!subs.isEmpty()) {
+            return previewProration(subs.get(0).getId(), newQuantity, changeDate);
+        }
+        Quotation q = quotationRepository.findById(quotationId)
+                .orElseThrow(() -> new RuntimeException("Quotation not found: " + quotationId));
+        BigDecimal baseRate = BigDecimal.valueOf(46.00);
+        for (QuotationLine l : q.getLines()) {
+            if ("RECURRING".equalsIgnoreCase(l.getLineType()) || (l.getProduct() != null && Boolean.TRUE.equals(l.getProduct().getIsSubscription()))) {
+                baseRate = l.getUnitPrice() != null ? l.getUnitPrice() : baseRate;
+                break;
+            }
+        }
+        LocalDate start = LocalDate.now();
+        LocalDate end = start.plusMonths(1);
+        if (changeDate == null) changeDate = start.plusDays(15);
+        var result = prorationEngine.calculateProration(start, end, changeDate, baseRate, baseRate, newQuantity > 0 ? (newQuantity - 1) : -1);
+        Map<String, Object> preview = new HashMap<>();
+        preview.put("quotationId", quotationId);
+        preview.put("oldQuantity", 1);
+        preview.put("newQuantity", newQuantity);
+        preview.put("unitPrice", baseRate);
+        preview.put("daysRemaining", result.getDaysRemaining());
+        preview.put("totalCycleDays", result.getTotalCycleDays());
+        preview.put("prorationFactor", result.getProrationFactor());
+        preview.put("adjustmentAmount", result.getAdjustmentAmount());
+        preview.put("isCreditNote", result.isCreditNote());
+        preview.put("explanation", result.getExplanation());
+        return preview;
+    }
 }

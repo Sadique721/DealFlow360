@@ -272,6 +272,10 @@ public class FulfillmentService {
                 .orElseThrow(() -> new RuntimeException("Fulfillment plan not found: " + planId));
     }
 
+    public Optional<FulfillmentPlan> findPlanByQuotationId(Long quotationId) {
+        return fulfillmentPlanRepository.findByQuotationId(quotationId);
+    }
+
     public FulfillmentPlan generateOrGetPlan(Long quotationId) {
         Optional<FulfillmentPlan> existing = fulfillmentPlanRepository.findByQuotationId(quotationId);
         if (existing.isPresent()) {

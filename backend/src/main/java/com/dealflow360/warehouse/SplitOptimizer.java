@@ -78,6 +78,9 @@ public class SplitOptimizer {
                 BigDecimal weight = fullCoverageWarehouse.getShippingCostWeight() != null ? fullCoverageWarehouse.getShippingCostWeight() : BigDecimal.ONE;
                 BigDecimal freight = baseFreight.multiply(weight);
 
+                String sg1 = "SHIP-" + fullCoverageWarehouse.getName().replace(" ", "-").toUpperCase();
+                if (sg1.length() > 50) sg1 = sg1.substring(0, 50);
+
                 FulfillmentSplit split = FulfillmentSplit.builder()
                         .quotationId(quotation.getId())
                         .warehouse(fullCoverageWarehouse)
@@ -85,7 +88,7 @@ public class SplitOptimizer {
                         .quantity(requiredQty)
                         .isBackorder(false)
                         .estimatedCost(freight.setScale(2, RoundingMode.HALF_UP))
-                        .shipmentGroup("SHIP-" + fullCoverageWarehouse.getName().replace(" ", "-").toUpperCase())
+                        .shipmentGroup(sg1)
                         .status("ALLOCATED")
                         .build();
 
@@ -106,6 +109,9 @@ public class SplitOptimizer {
                         BigDecimal weight = wh.getShippingCostWeight() != null ? wh.getShippingCostWeight() : BigDecimal.ONE;
                         BigDecimal freight = baseFreight.multiply(weight);
 
+                        String sg2 = "SHIP-" + wh.getName().replace(" ", "-").toUpperCase();
+                        if (sg2.length() > 50) sg2 = sg2.substring(0, 50);
+
                         FulfillmentSplit split = FulfillmentSplit.builder()
                                 .quotationId(quotation.getId())
                                 .warehouse(wh)
@@ -113,7 +119,7 @@ public class SplitOptimizer {
                                 .quantity(allocatable)
                                 .isBackorder(false)
                                 .estimatedCost(freight.setScale(2, RoundingMode.HALF_UP))
-                                .shipmentGroup("SHIP-" + wh.getName().replace(" ", "-").toUpperCase())
+                                .shipmentGroup(sg2)
                                 .status("ALLOCATED")
                                 .build();
 
@@ -128,6 +134,9 @@ public class SplitOptimizer {
                     result.hasBackorder = true;
                     Warehouse primaryWh = sortedWarehouses.get(0);
 
+                    String sg3 = "BACKORDER-" + primaryWh.getName().replace(" ", "-").toUpperCase();
+                    if (sg3.length() > 50) sg3 = sg3.substring(0, 50);
+
                     FulfillmentSplit backorderSplit = FulfillmentSplit.builder()
                             .quotationId(quotation.getId())
                             .warehouse(primaryWh)
@@ -135,7 +144,7 @@ public class SplitOptimizer {
                             .quantity(remainingQty)
                             .isBackorder(true)
                             .estimatedCost(BigDecimal.ZERO)
-                            .shipmentGroup("BACKORDER-" + primaryWh.getName().replace(" ", "-").toUpperCase())
+                            .shipmentGroup(sg3)
                             .status("BACKORDERED")
                             .build();
 

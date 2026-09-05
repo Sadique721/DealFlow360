@@ -2,6 +2,7 @@ package com.dealflow360.invoice;
 
 import com.dealflow360.catalog.Customer;
 import com.dealflow360.quotation.Quotation;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -56,4 +57,48 @@ public class Invoice {
     @Column(name = "created_at", updatable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @JsonProperty("quoteId")
+    public String getQuoteId() {
+        return quotation != null ? quotation.getQuoteNumber() : null;
+    }
+
+    @JsonProperty("quoteNumber")
+    public String getQuoteNumber() {
+        return quotation != null ? quotation.getQuoteNumber() : null;
+    }
+
+    @JsonProperty("quotationId")
+    public Long getQuotationId() {
+        return quotation != null ? quotation.getId() : null;
+    }
+
+    @JsonProperty("customerName")
+    public String getCustomerName() {
+        if (customer != null && customer.getName() != null) {
+            return customer.getName();
+        }
+        if (quotation != null && quotation.getCustomer() != null) {
+            return quotation.getCustomer().getName();
+        }
+        return "Unknown Customer";
+    }
+
+    @JsonProperty("salesRep")
+    public String getSalesRep() {
+        if (quotation != null && quotation.getSalesRep() != null) {
+            return quotation.getSalesRep().getName();
+        }
+        return "Unassigned";
+    }
+
+    @JsonProperty("salesRepName")
+    public String getSalesRepName() {
+        return getSalesRep();
+    }
+
+    @JsonProperty("issuedDate")
+    public String getIssuedDate() {
+        return createdAt != null ? createdAt.toLocalDate().toString() : (dueDate != null ? dueDate.minusDays(30).toString() : null);
+    }
 }

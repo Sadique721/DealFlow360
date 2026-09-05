@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -14,6 +14,18 @@ import { Subscription } from 'rxjs';
   imports: [CommonModule, FormsModule, RouterModule],
   template: `
     <div class="pipeline-container">
+
+      <!-- Session Expired Banner -->
+      <div *ngIf="sessionExpired" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;gap:20px;text-align:center;">
+        <div style="font-size:48px;">🔐</div>
+        <h2 style="font-size:22px;font-weight:700;color:#0f172a;margin:0;">Session Expired</h2>
+        <p style="color:#64748b;font-size:15px;max-width:400px;margin:0;">Your login session has expired or is invalid. Please log in again to continue.</p>
+        <a routerLink="/login" style="background:#2563eb;color:#fff;padding:10px 28px;border-radius:8px;font-weight:600;text-decoration:none;font-size:14px;">🔑 Log In Again</a>
+      </div>
+
+      <!-- Main pipeline content (hidden when session expired) -->
+      <ng-container *ngIf="!sessionExpired">
+
       <!-- Cyber RBAC Scoping Banner -->
       <div class="glass-panel rbac-banner">
         <div class="rbac-left">
@@ -126,6 +138,13 @@ import { Subscription } from 'rxjs';
               Draft ({{ getStatusCount('DRAFT') }})
             </button>
             <button
+              class="pill-btn pill-btn-returned"
+              [class.active]="selectedStatus === 'RETURNED'"
+              (click)="filterStatus('RETURNED')"
+            >
+              Returned ({{ getStatusCount('RETURNED') }})
+            </button>
+            <button
               class="pill-btn"
               [class.active]="selectedStatus === 'PENDING_APPROVAL'"
               (click)="filterStatus('PENDING_APPROVAL')"
@@ -220,6 +239,43 @@ import { Subscription } from 'rxjs';
             </div>
             <div *ngIf="getQuotesByStage('DRAFT').length === 0" class="empty-column-notice">
               No draft quotations
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 1b: Returned for Revision (Sales Rep needs to act) -->
+        <div class="kanban-column" *ngIf="getQuotesByStage('RETURNED').length > 0 || selectedStatus === 'RETURNED'">
+          <div class="column-header">
+            <div class="col-title">
+              <span class="stage-dot" style="background:#f97316"></span>
+              <span>Returned for Revision</span>
+            </div>
+            <span class="badge" style="background:rgba(249,115,22,0.15);color:#f97316;">{{ getQuotesByStage('RETURNED').length }}</span>
+          </div>
+          <div class="cards-list">
+            <div class="glass-panel deal-card" style="border-left:3px solid #f97316" *ngFor="let q of getQuotesByStage('RETURNED')">
+              <div class="card-top">
+                <span class="mono card-id">{{ q.quoteNumber }}</span>
+                <span class="badge" style="background:rgba(249,115,22,0.15);color:#f97316;">Needs Revision</span>
+              </div>
+              <h4 class="card-client">{{ q.customer?.name || 'Customer' }}</h4>
+              <div class="card-value">{{ formatCurrency(q.totalAmount) }}</div>
+              <div class="card-progress">
+                <div class="progress-bar-bg">
+                  <div class="progress-fill" [style.width.%]="getMargin(q)" [style.background]="getMarginColor(getMargin(q))"></div>
+                </div>
+                <div class="progress-labels">
+                  <span class="text-danger">Disc: {{ getDiscountPct(q) | number:'1.1-1' }}%</span>
+                  <span [style.color]="getMarginColor(getMargin(q))">Margin: {{ getMargin(q) | number:'1.1-1' }}%</span>
+                </div>
+              </div>
+              <div class="card-footer">
+                <span class="rep-tag">👤 {{ q.salesRep?.name || 'Sales Rep' }}</span>
+                <a [routerLink]="['/dashboard/quote', q.id]" class="btn btn-sm" style="background:#f97316;color:#fff;border:none;">Revise Quote</a>
+              </div>
+            </div>
+            <div *ngIf="getQuotesByStage('RETURNED').length === 0" class="empty-column-notice">
+              No returned quotations
             </div>
           </div>
         </div>
@@ -502,6 +558,7 @@ import { Subscription } from 'rxjs';
           </div>
         </div>
       </div>
+      </ng-container>
     </div>
   `,
   styles: [`
@@ -996,11 +1053,12 @@ export class PipelineComponent implements OnInit, OnDestroy {
   viewMode: 'kanban' | 'table' = 'kanban';
   selectedStatus = 'ALL';
   searchQuery = '';
+  sessionExpired = false;
 
   // Sort & Pagination state
   sortColumn = 'quoteNumber';
   sortDirection: 'asc' | 'desc' = 'desc';
-  pageSize = 25;
+  pageSize = 10;
   currentPage = 1;
 
   private subs = new Subscription();
@@ -1008,7 +1066,8 @@ export class PipelineComponent implements OnInit, OnDestroy {
   constructor(
     private quoteService: QuotationService,
     private healthService: DealHealthService,
-    private authService: AuthService
+    private authService: AuthService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -1034,15 +1093,34 @@ export class PipelineComponent implements OnInit, OnDestroy {
   }
 
   loadData(): void {
+    // Pre-check: if no token in localStorage, session is stale — force re-login
+    const token = localStorage.getItem('df_token');
+    if (!token) {
+      this.sessionExpired = true;
+      this.allQuotations = [];
+      this.applyRbacFilter();
+      return;
+    }
+    this.sessionExpired = false;
+
     this.quoteService.getQuotations().subscribe({
       next: (quotes) => {
         this.allQuotations = quotes || [];
         this.applyRbacFilter();
       },
       error: (err) => {
-        console.error('Failed to load quotations from API', err);
-        this.allQuotations = [];
-        this.applyRbacFilter();
+        if (err?.status === 401 || err?.status === 403) {
+          // Session expired or token revoked — clear stale session and redirect to login
+          this.sessionExpired = true;
+          this.allQuotations = [];
+          this.applyRbacFilter();
+          // Clear stale token/session
+          localStorage.removeItem('df_token');
+        } else {
+          console.error('Failed to load quotations from API', err);
+          this.allQuotations = [];
+          this.applyRbacFilter();
+        }
       }
     });
 
@@ -1058,10 +1136,12 @@ export class PipelineComponent implements OnInit, OnDestroy {
   }
 
   applyRbacFilter(): void {
-    // Backend already scopes by role, but frontend double-checks role filtering safely
+    // Backend already scopes by role; frontend applies RBAC filter as additional safety layer
     this.quotations = this.authService.filterQuotationsByRole(this.allQuotations);
     this.pendingCount = this.quotations.filter(q => q.status === 'PENDING_APPROVAL').length;
     this.currentPage = 1;
+    this.selectedStatus = 'ALL'; // Reset filter when data reloads
+    this.cdr.detectChanges();
   }
 
   get rbacScopeDescription(): string {
@@ -1069,13 +1149,13 @@ export class PipelineComponent implements OnInit, OnDestroy {
       return 'Full Administrator View: Universal access to all enterprise opportunities across all teams.';
     }
     if (this.currentRole === 'SALES_REP') {
-      return `Scoped to ${this.currentUserName}: Can view only assigned opportunities. Other representatives' deals are restricted.`;
+      return `Scoped to ${this.currentUserName}: Can view only assigned opportunities. Other representatives\' deals are restricted.`;
     }
     if (this.currentRole === 'SALES_MANAGER') {
-      return 'Sales Manager View: Overview of team pipelines and Level 1 governance approval requests.';
+      return 'Sales Manager View: Full team pipeline overview + Level 1 governance approval authority.';
     }
     if (this.currentRole === 'FINANCE') {
-      return 'Finance & Operations View: Filtered to deals requiring second-level risk review or pending fulfillment.';
+      return 'Finance & Operations View: Full pipeline visibility for financial oversight, risk review, and fulfillment tracking.';
     }
     if (this.currentRole === 'CUSTOMER') {
       return 'External Customer View: Scoped to your organization proposals with zero internal cost leakage.';
@@ -1138,7 +1218,22 @@ export class PipelineComponent implements OnInit, OnDestroy {
     return this.quotations.filter(q => q.status === status).length;
   }
 
+  /**
+   * Returns quotes for a given Kanban column stage.
+   * Respects the active selectedStatus filter pill:
+   *  - 'ALL' => show all matching the stage (no extra filter)
+   *  - specific status => only show quotes for the matching column, others return empty
+   */
   getQuotesByStage(stage: string): Quotation[] {
+    // If a specific status filter is active, only show cards in the matching column
+    if (this.selectedStatus !== 'ALL') {
+      const filterMatchesStage =
+        (this.selectedStatus === 'NEGOTIATION' && stage === 'NEGOTIATION') ||
+        (this.selectedStatus === 'CONFIRMED' && stage === 'CONFIRMED') ||
+        (this.selectedStatus === stage);
+      if (!filterMatchesStage) return [];
+    }
+
     if (stage === 'NEGOTIATION') {
       return this.quotations.filter(q => q.status === 'UNDER_NEGOTIATION' || q.status === 'SENT_TO_CUSTOMER');
     }

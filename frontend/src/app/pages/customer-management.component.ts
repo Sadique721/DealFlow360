@@ -152,7 +152,7 @@ import {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let c of filteredCustomers">
+              <tr *ngFor="let c of pagedCustomers">
                 <td>
                   <div class="customer-identity">
                     <span class="customer-name">{{ c.name }}</span>
@@ -200,6 +200,30 @@ import {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Table Pagination Toolbar -->
+        <div class="table-pagination-bar" *ngIf="filteredCustomers.length > 0">
+          <div class="pagination-info">
+            Showing <strong>{{ customerPaginationStart }}</strong> to <strong>{{ customerPaginationEnd }}</strong> of <strong>{{ filteredCustomers.length }}</strong> customers
+          </div>
+          <div class="pagination-controls">
+            <div class="page-size-selector">
+              <span class="text-muted">Per page:</span>
+              <select class="form-control form-control-sm select-page-size" [(ngModel)]="pageSize" (change)="customerPage = 1">
+                <option [ngValue]="10">10</option>
+                <option [ngValue]="25">25</option>
+                <option [ngValue]="50">50</option>
+              </select>
+            </div>
+            <div class="page-nav-buttons">
+              <button class="btn btn-outline btn-xs" (click)="customerPage = 1" [disabled]="customerPage === 1">« First</button>
+              <button class="btn btn-outline btn-xs" (click)="customerPage = customerPage - 1" [disabled]="customerPage === 1">‹ Prev</button>
+              <span class="page-number-display">Page {{ customerPage }} of {{ totalCustomerPages }}</span>
+              <button class="btn btn-outline btn-xs" (click)="customerPage = customerPage + 1" [disabled]="customerPage >= totalCustomerPages">Next ›</button>
+              <button class="btn btn-outline btn-xs" (click)="customerPage = totalCustomerPages" [disabled]="customerPage >= totalCustomerPages">Last »</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1133,13 +1157,52 @@ import {
       color: #94a3b8;
     }
 
-    .modal-footer {
-      padding: 16px 24px;
-      border-top: 1px solid #e2e8f0;
+    .table-pagination-bar {
       display: flex;
-      justify-content: flex-end;
-      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
       background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      border-radius: 0 0 12px 12px;
+      font-size: 13px;
+    }
+    .pagination-info {
+      color: #64748b;
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .page-size-selector {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .select-page-size {
+      width: 60px;
+      padding: 2px 6px;
+      height: 28px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #0f172a;
+    }
+    .page-nav-buttons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .page-number-display {
+      padding: 0 6px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .btn-xs {
+      padding: 3px 8px;
+      font-size: 12px;
+      border-radius: 6px;
     }
   `]
 })
@@ -1255,6 +1318,9 @@ export class CustomerManagementComponent implements OnInit {
     });
   }
 
+  customerPage = 1;
+  pageSize = 10;
+
   get filteredCustomers(): Customer[] {
     let result = this.customers;
     if (this.selectedTierFilter !== 'ALL') {
@@ -1270,6 +1336,23 @@ export class CustomerManagementComponent implements OnInit {
       );
     }
     return result;
+  }
+
+  get pagedCustomers(): Customer[] {
+    const start = (this.customerPage - 1) * this.pageSize;
+    return this.filteredCustomers.slice(start, start + this.pageSize);
+  }
+
+  get totalCustomerPages(): number {
+    return Math.ceil(this.filteredCustomers.length / this.pageSize) || 1;
+  }
+
+  get customerPaginationStart(): number {
+    return this.filteredCustomers.length === 0 ? 0 : (this.customerPage - 1) * this.pageSize + 1;
+  }
+
+  get customerPaginationEnd(): number {
+    return Math.min(this.customerPage * this.pageSize, this.filteredCustomers.length);
   }
 
   get filteredTiers(): CustomerTier[] {

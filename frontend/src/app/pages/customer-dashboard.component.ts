@@ -7,7 +7,7 @@ import { catchError, timeout } from 'rxjs/operators';
 import { of } from 'rxjs';
 import { ApiService } from '../services/api.service';
 import { AuthService, SessionUser } from '../services/auth.service';
-import { generate120Quotations } from '../services/mock-data';
+
 
 interface CustomerQuote {
   id: number;
@@ -134,7 +134,7 @@ interface CustomerQuote {
         <div class="cust-quote-list">
           <div
             class="cust-quote-card"
-            *ngFor="let q of myQuotes"
+            *ngFor="let q of pagedQuotes"
             (click)="openQuote(q)"
           >
             <div class="cust-quote-card-top">
@@ -154,6 +154,30 @@ interface CustomerQuote {
             <div class="cust-quote-card-footer">
               <span>Created {{ q.createdAt | date:'mediumDate' }}</span>
               <button class="cust-view-btn">View & Negotiate →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table Pagination Toolbar -->
+        <div class="table-pagination-bar" *ngIf="myQuotes.length > 0">
+          <div class="pagination-info">
+            Showing <strong>{{ paginationStart }}</strong> to <strong>{{ paginationEnd }}</strong> of <strong>{{ myQuotes.length }}</strong> proposals
+          </div>
+          <div class="pagination-controls">
+            <div class="page-size-selector">
+              <span class="text-muted">Per page:</span>
+              <select class="form-control form-control-sm select-page-size" [(ngModel)]="pageSize" (change)="currentPage = 1">
+                <option [ngValue]="10">10</option>
+                <option [ngValue]="25">25</option>
+                <option [ngValue]="50">50</option>
+              </select>
+            </div>
+            <div class="page-nav-buttons">
+              <button class="btn btn-outline btn-xs" (click)="currentPage = 1" [disabled]="currentPage === 1">« First</button>
+              <button class="btn btn-outline btn-xs" (click)="currentPage = currentPage - 1" [disabled]="currentPage === 1">‹ Prev</button>
+              <span class="page-number-display">Page {{ currentPage }} of {{ totalPages }}</span>
+              <button class="btn btn-outline btn-xs" (click)="currentPage = currentPage + 1" [disabled]="currentPage >= totalPages">Next ›</button>
+              <button class="btn btn-outline btn-xs" (click)="currentPage = totalPages" [disabled]="currentPage >= totalPages">Last »</button>
             </div>
           </div>
         </div>
@@ -963,10 +987,56 @@ interface CustomerQuote {
       border-bottom: 1px solid #f1f5f9;
       font-size: 13px;
     }
-    .cust-detail-row:last-child { border-bottom: none; }
-    .cust-detail-label { color: #64748b; font-weight: 500; }
-    .cust-detail-val { color: #0f172a; font-weight: 600; }
     .cust-detail-val.warn { color: #d97706; }
+
+    .table-pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      margin-top: 16px;
+      font-size: 13px;
+    }
+    .pagination-info {
+      color: #64748b;
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .page-size-selector {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .select-page-size {
+      width: 60px;
+      padding: 2px 6px;
+      height: 28px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #0f172a;
+    }
+    .page-nav-buttons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .page-number-display {
+      padding: 0 6px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .btn-xs {
+      padding: 3px 8px;
+      font-size: 12px;
+      border-radius: 6px;
+    }
   `]
 })
 export class CustomerDashboardComponent implements OnInit, OnDestroy {
@@ -977,6 +1047,26 @@ export class CustomerDashboardComponent implements OnInit, OnDestroy {
   isLoading = true;
   myQuotes: CustomerQuote[] = [];
   activeQuote: CustomerQuote | null = null;
+
+  currentPage = 1;
+  pageSize = 10;
+
+  get pagedQuotes(): CustomerQuote[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.myQuotes.slice(start, start + this.pageSize);
+  }
+
+  get totalPages(): number {
+    return Math.ceil(this.myQuotes.length / this.pageSize) || 1;
+  }
+
+  get paginationStart(): number {
+    return this.myQuotes.length === 0 ? 0 : (this.currentPage - 1) * this.pageSize + 1;
+  }
+
+  get paginationEnd(): number {
+    return Math.min(this.currentPage * this.pageSize, this.myQuotes.length);
+  }
 
   newMessage = '';
   counterDiscountPct?: number;
@@ -1034,24 +1124,16 @@ export class CustomerDashboardComponent implements OnInit, OnDestroy {
     this.isLoading = true;
 
     // Try the backend API first (with timeout)
-    this.api.get<any[]>('quotations', { customerId: this.user?.id }).pipe(
+    // Backend CUSTOMER role scopes quotes by JWT claim (findByPortalUserId) \u2014 no query param needed
+    this.api.get<any[]>('quotations').pipe(
       timeout(4000),
       catchError(() => of(null))
     ).subscribe(data => {
       if (data && data.length > 0) {
         this.myQuotes = this.mapQuotes(data);
       } else {
-        // Backend unavailable or no results — show empty state for new customers
-        // Only fall back to mock if the customer email matches known mock data
-        const mockAll = generate120Quotations();
-        const myEmail = this.user?.email?.toLowerCase() || '';
-        const myName = this.user?.name?.toLowerCase() || '';
-        const matched = mockAll.filter(q =>
-          q.customer?.email?.toLowerCase() === myEmail ||
-          q.customer?.name?.toLowerCase().includes(myName.split(' ')[0]) ||
-          (q as any).customerEmail?.toLowerCase() === myEmail
-        );
-        this.myQuotes = matched.length > 0 ? this.mapQuotes(matched) : [];
+        // No quotations for this customer yet — show empty state
+        this.myQuotes = [];
       }
       this.isLoading = false;
       this.cdr.detectChanges();

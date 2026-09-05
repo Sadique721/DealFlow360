@@ -17,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,15 +31,18 @@ public class QuotationController {
     private final ApprovalService approvalService;
     private final com.dealflow360.warehouse.FulfillmentService fulfillmentService;
     private final com.dealflow360.upsell.UpsellService upsellService;
+    private final com.dealflow360.subscription.SubscriptionService subscriptionService;
 
     public QuotationController(QuotationService quotationService,
                                ApprovalService approvalService,
                                com.dealflow360.warehouse.FulfillmentService fulfillmentService,
-                               com.dealflow360.upsell.UpsellService upsellService) {
+                               com.dealflow360.upsell.UpsellService upsellService,
+                               com.dealflow360.subscription.SubscriptionService subscriptionService) {
         this.quotationService = quotationService;
         this.approvalService = approvalService;
         this.fulfillmentService = fulfillmentService;
         this.upsellService = upsellService;
+        this.subscriptionService = subscriptionService;
     }
 
     @GetMapping
@@ -164,5 +168,114 @@ public class QuotationController {
     @Operation(summary = "Get live upsell & cross-sell suggestions for a quotation")
     public ResponseEntity<List<com.dealflow360.upsell.dto.UpsellSuggestion>> getUpsellSuggestions(@PathVariable Long id) {
         return ResponseEntity.ok(upsellService.getSuggestionsForQuotation(id));
+    }
+
+    @GetMapping("/{id}/approval")
+    @Operation(summary = "Get approval status, steps, and risk evaluation for a quotation")
+    public ResponseEntity<Map<String, Object>> getQuotationApproval(@PathVariable Long id) {
+        Quotation quotation = quotationService.getQuotationById(id);
+        var requestOpt = approvalService.getRequestByQuotationId(id);
+        var steps = approvalService.getStepsForQuotation(id);
+        var riskBreakdown = quotationService.getQuotationRiskBreakdown(id);
+
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("quotationId", id);
+        resp.put("quoteNumber", quotation.getQuoteNumber());
+        resp.put("status", quotation.getStatus());
+        resp.put("marginPct", quotation.getMarginPct());
+        resp.put("riskScore", quotation.getRiskScore());
+        resp.put("blendedDiscountPct", quotation.getBlendedDiscountPct());
+        resp.put("approvalRequest", requestOpt.orElse(null));
+        resp.put("steps", steps);
+        resp.put("riskBreakdown", riskBreakdown);
+        resp.put("requiresManagerApproval", quotation.getRequiresManagerApproval());
+        resp.put("requiresFinanceApproval", quotation.getRequiresFinanceApproval());
+        return ResponseEntity.ok(resp);
+    }
+
+    @PostMapping("/{id}/fulfillment-plan/accept")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE','SALES_MANAGER')")
+    @Operation(summary = "Accept suggested fulfillment split plan for a quotation")
+    public ResponseEntity<com.dealflow360.warehouse.FulfillmentPlan> acceptFulfillmentPlanForQuotation(@PathVariable Long id) {
+        com.dealflow360.warehouse.FulfillmentPlan plan = fulfillmentService.generateOrGetPlan(id);
+        return ResponseEntity.ok(fulfillmentService.acceptSuggestedPlan(plan.getId()));
+    }
+
+    @PostMapping("/{id}/fulfillment-plan/override")
+    @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
+    @Operation(summary = "Manually override warehouse allocation splits for a quotation")
+    public ResponseEntity<com.dealflow360.warehouse.FulfillmentPlan> overrideFulfillmentPlanForQuotation(
+            @PathVariable Long id,
+            @RequestBody List<com.dealflow360.warehouse.dto.ManualSplitRequest> manualSplits,
+            @RequestParam(defaultValue = "Manual logistics decision") String reason) {
+        com.dealflow360.warehouse.FulfillmentPlan plan = fulfillmentService.generateOrGetPlan(id);
+        return ResponseEntity.ok(fulfillmentService.manualOverride(plan.getId(), manualSplits, reason));
+    }
+
+    @GetMapping("/{id}/billing")
+    @Operation(summary = "Get Capex vs Opex billing schedule and subscription overview for quotation")
+    public ResponseEntity<Map<String, Object>> getQuotationBilling(@PathVariable Long id) {
+        return ResponseEntity.ok(subscriptionService.getBillingOverviewForQuotation(id));
+    }
+
+    @PostMapping("/{id}/billing/proration-preview")
+    @Operation(summary = "Preview proration adjustment for quotation subscription")
+    public ResponseEntity<Map<String, Object>> previewProrationForQuotation(
+            @PathVariable Long id,
+            @RequestParam int newQuantity,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate changeDate) {
+        return ResponseEntity.ok(subscriptionService.previewProrationForQuotation(id, newQuantity, changeDate));
+    }
+
+    @GetMapping("/{id}/status-summary")
+    @Operation(summary = "Get comprehensive quotation lifecycle status summary (approval, fulfillment, billing)")
+    public ResponseEntity<Map<String, Object>> getStatusSummary(@PathVariable Long id) {
+        Quotation q = quotationService.getQuotationById(id);
+        var appOpt = approvalService.getRequestByQuotationId(id);
+        var steps = approvalService.getStepsForQuotation(id);
+        var planOpt = fulfillmentService.findPlanByQuotationId(id);
+        var billing = subscriptionService.getBillingOverviewForQuotation(id);
+
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("quotationId", id);
+        summary.put("quoteNumber", q.getQuoteNumber());
+        summary.put("status", q.getStatus());
+        summary.put("customerName", q.getCustomer() != null ? q.getCustomer().getName() : null);
+        summary.put("salesRepName", q.getSalesRep() != null ? q.getSalesRep().getName() : null);
+        summary.put("totalAmount", q.getTotalAmount());
+        summary.put("marginPct", q.getMarginPct());
+        summary.put("riskScore", q.getRiskScore());
+
+        Map<String, Object> appSummary = new HashMap<>();
+        if (appOpt.isPresent()) {
+            ApprovalRequest ar = appOpt.get();
+            appSummary.put("status", ar.getStatus());
+            appSummary.put("currentLevel", ar.getCurrentLevel());
+            appSummary.put("requiredTier", ar.getRequiredTier());
+            appSummary.put("stepsCount", steps.size());
+        } else {
+            appSummary.put("status", "NOT_SUBMITTED");
+        }
+        summary.put("approval", appSummary);
+
+        Map<String, Object> fulSummary = new HashMap<>();
+        if (planOpt.isPresent()) {
+            var p = planOpt.get();
+            fulSummary.put("planId", p.getId());
+            fulSummary.put("status", p.getStatus());
+            fulSummary.put("shipmentCount", p.getShipmentCount());
+            fulSummary.put("totalShippingCost", p.getTotalShippingCost());
+            fulSummary.put("splitsCount", p.getSplits() != null ? p.getSplits().size() : 0);
+        } else {
+            fulSummary.put("status", "NO_PLAN");
+        }
+        summary.put("fulfillment", fulSummary);
+
+        Map<String, Object> billSummary = new HashMap<>();
+        billSummary.put("oneTimeTotal", billing.get("oneTimeTotal"));
+        billSummary.put("recurringTotal", billing.get("recurringTotal"));
+        summary.put("billing", billSummary);
+
+        return ResponseEntity.ok(summary);
     }
 }

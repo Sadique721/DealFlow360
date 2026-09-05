@@ -153,7 +153,7 @@ import {
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let p of filteredProducts">
+              <tr *ngFor="let p of pagedProducts">
                 <td>
                   <div class="product-identity">
                     <span class="product-name">{{ p.name }}</span>
@@ -181,7 +181,7 @@ import {
                 </td>
                 <td>
                   <span *ngIf="p.isSubscription" class="type-pill subscription">
-                    🔄 {{ p.recurringInterval || 'MONTHLY' }}
+                    🔄 {{ p.recurringInterval || p.billingFrequency || 'MONTHLY' }}
                   </span>
                   <span *ngIf="!p.isSubscription" class="type-pill standard">
                     📦 {{ p.unitOfMeasure || 'Unit' }}
@@ -210,6 +210,30 @@ import {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Table Pagination Toolbar -->
+        <div class="table-pagination-bar" *ngIf="filteredProducts.length > 0">
+          <div class="pagination-info">
+            Showing <strong>{{ productPaginationStart }}</strong> to <strong>{{ productPaginationEnd }}</strong> of <strong>{{ filteredProducts.length }}</strong> products
+          </div>
+          <div class="pagination-controls">
+            <div class="page-size-selector">
+              <span class="text-muted">Per page:</span>
+              <select class="form-control form-control-sm select-page-size" [(ngModel)]="pageSize" (change)="productPage = 1">
+                <option [ngValue]="10">10</option>
+                <option [ngValue]="25">25</option>
+                <option [ngValue]="50">50</option>
+              </select>
+            </div>
+            <div class="page-nav-buttons">
+              <button class="btn btn-outline btn-xs" (click)="productPage = 1" [disabled]="productPage === 1">« First</button>
+              <button class="btn btn-outline btn-xs" (click)="productPage = productPage - 1" [disabled]="productPage === 1">‹ Prev</button>
+              <span class="page-number-display">Page {{ productPage }} of {{ totalProductPages }}</span>
+              <button class="btn btn-outline btn-xs" (click)="productPage = productPage + 1" [disabled]="productPage >= totalProductPages">Next ›</button>
+              <button class="btn btn-outline btn-xs" (click)="productPage = totalProductPages" [disabled]="productPage >= totalProductPages">Last »</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1228,13 +1252,52 @@ import {
       color: #334155;
     }
 
-    .modal-footer {
-      padding: 16px 24px;
-      border-top: 1px solid #e2e8f0;
+    .table-pagination-bar {
       display: flex;
-      justify-content: flex-end;
-      gap: 12px;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
       background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      border-radius: 0 0 12px 12px;
+      font-size: 13px;
+    }
+    .pagination-info {
+      color: #64748b;
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .page-size-selector {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .select-page-size {
+      width: 60px;
+      padding: 2px 6px;
+      height: 28px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #0f172a;
+    }
+    .page-nav-buttons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .page-number-display {
+      padding: 0 6px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .btn-xs {
+      padding: 3px 8px;
+      font-size: 12px;
+      border-radius: 6px;
     }
   `]
 })
@@ -1359,6 +1422,9 @@ export class CatalogManagementComponent implements OnInit {
     });
   }
 
+  productPage = 1;
+  pageSize = 10;
+
   get filteredProducts(): Product[] {
     let result = this.products;
     if (this.selectedCategoryFilter !== 'ALL') {
@@ -1374,6 +1440,23 @@ export class CatalogManagementComponent implements OnInit {
       );
     }
     return result;
+  }
+
+  get pagedProducts(): Product[] {
+    const start = (this.productPage - 1) * this.pageSize;
+    return this.filteredProducts.slice(start, start + this.pageSize);
+  }
+
+  get totalProductPages(): number {
+    return Math.ceil(this.filteredProducts.length / this.pageSize) || 1;
+  }
+
+  get productPaginationStart(): number {
+    return this.filteredProducts.length === 0 ? 0 : (this.productPage - 1) * this.pageSize + 1;
+  }
+
+  get productPaginationEnd(): number {
+    return Math.min(this.productPage * this.pageSize, this.filteredProducts.length);
   }
 
   get filteredCategories(): Category[] {
@@ -1647,10 +1730,10 @@ export class CatalogManagementComponent implements OnInit {
   }
 
   deletePriceList(pl: PriceList) {
-    if (!confirm(`Are you sure you want to delete price list for tier "${pl.customerTier}"?`)) return;
+    if (!confirm('Are you sure you want to delete price list for tier "' + pl.customerTier + '"?')) return;
     this.catalogService.deletePriceList(pl.id).subscribe({
       next: () => {
-        this.showToast(`Price List for tier "${pl.customerTier}" deleted`);
+        this.showToast('Price List for tier "' + pl.customerTier + '" deleted');
         this.loadAllData(false);
         this.cdr.detectChanges();
       },

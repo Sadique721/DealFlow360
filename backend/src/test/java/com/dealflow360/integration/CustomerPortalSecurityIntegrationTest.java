@@ -240,6 +240,10 @@ class CustomerPortalSecurityIntegrationTest {
                 .build();
 
         when(quotationService.getQuotationRiskBreakdown(88L)).thenReturn(riskResult);
+        when(quotationService.submitForApproval(eq(88L), anyString())).thenAnswer(inv -> {
+            quote.setStatus("PENDING_APPROVAL");
+            return Map.of("status", "PENDING_APPROVAL");
+        });
 
         Map<String, Object> confirmResult = negotiationService.confirmPortalQuotation("token-secure-1088", "Buyer John");
 

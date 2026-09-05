@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
@@ -1279,7 +1279,8 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     private router: Router,
     private quoteService: QuotationService,
     private catalogService: CatalogService,
-    private authService: AuthService
+    private authService: AuthService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -1289,13 +1290,17 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     this.targetDeliveryDate = d.toISOString().split('T')[0];
 
     this.subs.add(
-      this.authService.currentRole$.subscribe(r => this.currentRole = r)
+      this.authService.currentRole$.subscribe(r => {
+        this.currentRole = r;
+        this.cdr.markForCheck();
+      })
     );
     this.subs.add(
       this.authService.currentUser$.subscribe(u => {
         if (u) {
           this.currentUserName = u.name;
           this.currentUserId = u.id;
+          this.cdr.markForCheck();
         }
       })
     );
@@ -1324,11 +1329,13 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
           if (this.availablePriceLists.length > 0 && !this.selectedPriceListId) {
             this.selectedPriceListId = this.availablePriceLists[0].id;
           }
+          this.cdr.detectChanges();
         } else {
           const parsed = parseInt(idParam, 10);
           if (isNaN(parsed)) {
             this.errorMessage = `Invalid quotation ID: ${idParam}`;
             this.isLoading = false;
+            this.cdr.detectChanges();
           } else {
             // Only trigger remote load if this quote is not already in memory
             if (!this.quote || this.quote.id !== parsed) {
@@ -1337,6 +1344,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
               this.isCreateMode = false;
               this.quoteId = parsed;
               this.isLoading = false;
+              this.cdr.detectChanges();
             }
           }
         }
@@ -1369,6 +1377,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
             this.selectedPriceListId = this.availablePriceLists[0].id;
           }
         }
+        this.cdr.markForCheck();
       }
     });
   }
@@ -1380,21 +1389,46 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     this.isLoading = false;
     this.errorMessage = null;
 
-    this.lines = (q.lines || []).map(l => ({
-      ...l,
-      unitListPrice: l.unitListPrice || l.product?.basePrice || 0,
-      unitDiscountPct: l.unitDiscountPct ?? (l as any).discountPercent ?? 0,
-      unitFinalPrice: l.unitFinalPrice || (l.unitListPrice ? l.unitListPrice * (1 - ((l.unitDiscountPct || 0)/100)) : 0),
-      lineTotal: l.lineTotal || 0,
-      lineCost: l.lineCost || (l.product?.costPrice ? l.product.costPrice * l.quantity : ((l.product?.unitCost || 0) * l.quantity)),
-      lineMarginPct: l.lineMarginPct ?? (l.lineTotal && l.lineCost ? ((l.lineTotal - l.lineCost) / l.lineTotal * 100) : 0)
-    }));
-    this.recalculateTotals();
+    try {
+      this.lines = (q.lines || []).map(l => {
+        const listPrice = Number(l.unitListPrice || (l as any).unitPrice || l.product?.basePrice || 0);
+        const discPct = Number(l.unitDiscountPct ?? (l as any).discountPercent ?? 0);
+        const discFactor = discPct > 0 ? (discPct / 100) : 0;
+        const finalUnit = Number(l.unitFinalPrice || (listPrice > 0 ? listPrice * (1 - discFactor) : 0));
+        const qty = Number(l.quantity || 1);
+        const total = Number(l.lineTotal || (finalUnit * qty));
+        const unitCost = Number((l as any).costPrice ?? l.product?.costPrice ?? (l.product as any)?.unitCost ?? 0);
+        const lineCost = Number(l.lineCost || (unitCost * qty));
+        let marginPct = Number(l.lineMarginPct ?? 0);
+        if (marginPct <= 0 && (l as any).marginAmount && total > 0) {
+          marginPct = (Number((l as any).marginAmount) / total) * 100;
+        } else if (marginPct <= 0 && total > 0 && lineCost > 0) {
+          marginPct = ((total - lineCost) / total) * 100;
+        }
+
+        return {
+          ...l,
+          quantity: qty,
+          unitListPrice: listPrice,
+          unitDiscountPct: discPct,
+          unitDiscountAmount: listPrice * discFactor,
+          unitFinalPrice: finalUnit,
+          lineTotal: total,
+          lineCost: lineCost,
+          lineMarginPct: Number(marginPct.toFixed(1))
+        };
+      });
+      this.recalculateTotals();
+    } catch (err) {
+      console.error('Exception in applyQuoteData:', err);
+    }
+    this.cdr.detectChanges();
   }
 
   loadQuote(id: number): void {
     this.isLoading = true;
     this.errorMessage = null;
+    this.cdr.detectChanges();
 
     this.quoteService.getQuotationById(id)
       .pipe(timeout(10000))
@@ -1403,10 +1437,12 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
           this.isLoading = false;
           if (!q) {
             this.errorMessage = `Quotation #${id} returned empty data from server.`;
+            this.cdr.detectChanges();
             return;
           }
           this.applyQuoteData(q);
           this.loadUpsells(id);
+          this.cdr.detectChanges();
         },
         error: (err) => {
           this.isLoading = false;
@@ -1419,6 +1455,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
           } else {
             this.errorMessage = err.error?.message || err.message || `Failed to load quotation #${id} from backend.`;
           }
+          this.cdr.detectChanges();
         }
       });
   }
@@ -1447,7 +1484,17 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     if (this.isCreateMode) return true;
     if (!this.quote) return false;
     const editableStatuses = ['DRAFT', 'UNDER_NEGOTIATION', 'RETURNED'];
-    return editableStatuses.includes(this.quote.status) && this.currentRole !== 'CUSTOMER';
+    if (!editableStatuses.includes(this.quote.status)) return false;
+    if (this.currentRole === 'CUSTOMER') return false;
+    // SALES_REP can only edit their own quotes
+    if (this.currentRole === 'SALES_REP') {
+      const user = this.authService.currentUser;
+      const repEmail = this.quote.salesRep?.email;
+      const repName = this.quote.salesRep?.name;
+      if (repEmail && user.email && repEmail !== user.email) return false;
+      if (!repEmail && repName && user.name && repName.toLowerCase() !== user.name.toLowerCase()) return false;
+    }
+    return true;
   }
 
   get capexLines(): QuotationLine[] {
@@ -1641,13 +1688,14 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
     line.unitDiscountAmount = list * (discPct / 100);
     line.unitFinalPrice = list - line.unitDiscountAmount;
     line.lineTotal = line.unitFinalPrice * line.quantity;
-    const cost = line.product?.costPrice ?? line.product?.unitCost ?? 0;
+    const cost = Number((line as any).costPrice ?? line.product?.costPrice ?? (line.product as any)?.unitCost ?? 0);
     line.lineCost = cost * line.quantity;
     line.lineMarginPct = line.lineTotal > 0
       ? Number((((line.lineTotal - line.lineCost) / line.lineTotal) * 100).toFixed(1))
       : 0;
 
     this.recalculateTotals();
+    this.cdr.detectChanges();
   }
 
   recalculateTotals(): void {

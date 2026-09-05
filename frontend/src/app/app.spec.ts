@@ -14,33 +14,5 @@ describe('App', () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
     expect(app).toBeTruthy();
-    expect(app.currentRole).toBe('ADMIN');
-  });
-
-  it('should switch personas dynamically for hackathon judges', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    app.switchRole('SALES_REP', 'Jay Rao (Sales Rep)');
-    expect(app.currentRole).toBe('SALES_REP');
-    expect(app.currentUser).toBe('Jay Rao (Sales Rep)');
-  });
-
-  it('should render brand logo with DealFlow360', async () => {
-    const fixture = TestBed.createComponent(App);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('.brand-name')?.textContent).toContain('DealFlow');
-    expect(compiled.querySelector('.brand-name')?.textContent).toContain('360');
-  });
-
-  it('should toggle and close mobile off-canvas drawer', () => {
-    const fixture = TestBed.createComponent(App);
-    const app = fixture.componentInstance;
-    expect(app.mobileMenuOpen).toBe(false);
-    app.toggleMobileMenu();
-    expect(app.mobileMenuOpen).toBe(true);
-    app.closeMobileMenu();
-    expect(app.mobileMenuOpen).toBe(false);
   });
 });

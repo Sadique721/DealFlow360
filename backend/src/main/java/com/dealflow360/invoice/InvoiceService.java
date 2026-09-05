@@ -47,14 +47,42 @@ public class InvoiceService {
         Quotation quotation = quotationRepository.findById(quotationId)
                 .orElseThrow(() -> new RuntimeException("Quotation not found: " + quotationId));
 
-        String invoiceNumber = "INV-2026-" + String.format("%03d", invoiceRepository.count() + 1);
+        long count = invoiceRepository.count() + 1;
+        String invoiceNumber = "INV-2026-" + String.format("%03d", count);
+        while (invoiceRepository.existsByInvoiceNumber(invoiceNumber)) {
+            count++;
+            invoiceNumber = "INV-2026-" + String.format("%03d", count);
+        }
+
+        BigDecimal finalAmount = amount;
+        if (finalAmount == null) {
+            if ("RECURRING".equalsIgnoreCase(invoiceType)) {
+                BigDecimal rec = BigDecimal.ZERO;
+                for (var l : quotation.getLines()) {
+                    if ("RECURRING".equalsIgnoreCase(l.getLineType()) || (l.getProduct() != null && Boolean.TRUE.equals(l.getProduct().getIsSubscription()))) {
+                        rec = rec.add(l.getLineTotal());
+                    }
+                }
+                finalAmount = rec.compareTo(BigDecimal.ZERO) > 0 ? rec : quotation.getTotalAmount();
+            } else if ("ONE_TIME".equalsIgnoreCase(invoiceType)) {
+                BigDecimal oneTime = BigDecimal.ZERO;
+                for (var l : quotation.getLines()) {
+                    if (!"RECURRING".equalsIgnoreCase(l.getLineType()) && (l.getProduct() == null || !Boolean.TRUE.equals(l.getProduct().getIsSubscription()))) {
+                        oneTime = oneTime.add(l.getLineTotal());
+                    }
+                }
+                finalAmount = oneTime.compareTo(BigDecimal.ZERO) > 0 ? oneTime : quotation.getTotalAmount();
+            } else {
+                finalAmount = quotation.getTotalAmount();
+            }
+        }
 
         Invoice invoice = Invoice.builder()
                 .invoiceNumber(invoiceNumber)
                 .quotation(quotation)
                 .customer(quotation.getCustomer())
                 .invoiceType(invoiceType != null ? invoiceType : "ONE_TIME")
-                .amount(amount != null ? amount : quotation.getTotalAmount())
+                .amount(finalAmount)
                 .status("UNPAID")
                 .dueDate(LocalDate.now().plusDays(30))
                 .deliveryStatus("SHIPPED")
@@ -63,8 +91,19 @@ public class InvoiceService {
         invoice = invoiceRepository.save(invoice);
 
         auditService.log("INVOICE", invoice.getId(), "GENERATED", "Billing Engine",
-                null, "UNPAID", "Invoice " + invoiceNumber + " issued for quotation " + quotation.getQuoteNumber(), BigDecimal.ZERO);
+                null, "UNPAID", "Invoice " + invoiceNumber + " (" + invoice.getInvoiceType() + ") issued for quotation " + quotation.getQuoteNumber(), finalAmount);
 
+        return invoice;
+    }
+
+    public Invoice voidInvoice(Long invoiceId, String reason) {
+        Invoice invoice = getInvoiceById(invoiceId);
+        String oldStatus = invoice.getStatus();
+        invoice.setStatus("VOID");
+        invoiceRepository.save(invoice);
+
+        auditService.log("INVOICE", invoice.getId(), "VOIDED", "Finance Officer",
+                oldStatus, "VOID", "Invoice voided: " + (reason != null ? reason : "Administrative cancellation"), BigDecimal.ZERO);
         return invoice;
     }
 

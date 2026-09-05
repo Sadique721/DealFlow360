@@ -71,7 +71,7 @@ class AnomalyDetectionServiceTest {
 
         when(quotationRepository.findStalledQuotations(any())).thenReturn(List.of(stalledQuote));
         when(flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(10L, "STALLED"))
-                .thenReturn(Optional.empty());
+                .thenReturn(List.of());
 
         service.scanForStalledDeals();
 
@@ -111,7 +111,7 @@ class AnomalyDetectionServiceTest {
         when(quotationRepository.findAll()).thenReturn(List.of(currentQuote));
         when(quotationRepository.findRecentConfirmedByRep(3L)).thenReturn(List.of(h1, h2, h3, h4));
         when(flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(11L, "DISCOUNT_ANOMALY"))
-                .thenReturn(Optional.empty());
+                .thenReturn(List.of());
 
         service.scanForDiscountAnomalies();
 

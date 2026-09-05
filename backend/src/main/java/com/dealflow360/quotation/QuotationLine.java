@@ -64,4 +64,45 @@ public class QuotationLine {
     @Column(length = 50)
     @Builder.Default
     private String status = "OK"; // OK, OVER
+
+    @com.fasterxml.jackson.annotation.JsonProperty("unitListPrice")
+    public BigDecimal getUnitListPrice() {
+        return unitPrice != null ? unitPrice : (product != null ? product.getBasePrice() : BigDecimal.ZERO);
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("unitDiscountPct")
+    public BigDecimal getUnitDiscountPct() {
+        return discountPercent != null ? discountPercent : BigDecimal.ZERO;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("unitFinalPrice")
+    public BigDecimal getUnitFinalPrice() {
+        if (unitPrice == null) return BigDecimal.ZERO;
+        if (discountPercent == null || discountPercent.compareTo(BigDecimal.ZERO) <= 0) return unitPrice;
+        BigDecimal discFactor = discountPercent.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP);
+        return unitPrice.multiply(BigDecimal.ONE.subtract(discFactor)).setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("lineCost")
+    public BigDecimal getLineCost() {
+        if (costPrice != null) {
+            return costPrice.multiply(BigDecimal.valueOf(quantity != null ? quantity : 1));
+        }
+        if (product != null && product.getCostPrice() != null) {
+            return product.getCostPrice().multiply(BigDecimal.valueOf(quantity != null ? quantity : 1));
+        }
+        return BigDecimal.ZERO;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("lineMarginPct")
+    public BigDecimal getLineMarginPct() {
+        if (lineTotal != null && lineTotal.compareTo(BigDecimal.ZERO) > 0 && marginAmount != null) {
+            return marginAmount.multiply(BigDecimal.valueOf(100)).divide(lineTotal, 2, java.math.RoundingMode.HALF_UP);
+        }
+        BigDecimal cost = getLineCost();
+        if (lineTotal != null && lineTotal.compareTo(BigDecimal.ZERO) > 0 && cost != null) {
+            return lineTotal.subtract(cost).multiply(BigDecimal.valueOf(100)).divide(lineTotal, 2, java.math.RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO;
+    }
 }

@@ -3,6 +3,7 @@ package com.dealflow360.reporting;
 import com.dealflow360.quotation.Quotation;
 import com.dealflow360.quotation.QuotationLine;
 import com.dealflow360.quotation.QuotationRepository;
+import com.dealflow360.subscription.SubscriptionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,9 +17,11 @@ import java.util.*;
 public class ReportingService {
 
     private final QuotationRepository quotationRepository;
+    private final SubscriptionRepository subscriptionRepository;
 
-    public ReportingService(QuotationRepository quotationRepository) {
+    public ReportingService(QuotationRepository quotationRepository, SubscriptionRepository subscriptionRepository) {
         this.quotationRepository = quotationRepository;
+        this.subscriptionRepository = subscriptionRepository;
     }
 
     public Map<String, Object> getExecutiveKpis(String period, Long repId, String status) {
@@ -64,6 +67,8 @@ public class ReportingService {
         kpis.put("averageGrossMarginPercent", avgMarginPct);
         kpis.put("pendingApprovalsCount", pendingApprovalCount);
         kpis.put("stalledDealsCount", stalledCount);
+        long activeContracts = subscriptionRepository.findByStatus("ACTIVE").size();
+        kpis.put("activeContractsCount", activeContracts);
 
         return kpis;
     }

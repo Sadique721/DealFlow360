@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule, Router } from '@angular/router';
@@ -6,7 +6,6 @@ import { ApprovalService } from '../services/approval.service';
 import { QuotationService } from '../services/quotation.service';
 import { AuthService } from '../services/auth.service';
 import { ApprovalRequest, ApprovalStep, Quotation, LineOverageDetail } from '../models/dealflow.model';
-import { generate120Approvals, generate120Quotations } from '../services/mock-data';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -273,17 +272,17 @@ import { Subscription } from 'rxjs';
               <div class="risk-metrics-bar">
                 <div class="risk-metric">
                   <span class="rm-lbl">Blended Discount</span>
-                  <span class="rm-val text-danger font-bold mono">{{ selectedApproval.quotation.blendedDiscountPct | number:'1.1-2' }}%</span>
+                  <span class="rm-val text-danger font-bold mono">{{ getQuoteDiscount(selectedApproval.quotation) | number:'1.1-2' }}%</span>
                 </div>
                 <div class="risk-metric">
                   <span class="rm-lbl">Deal Margin</span>
-                  <span class="rm-val font-bold mono" [class.text-danger]="selectedApproval.quotation.marginPct < 18">
-                    {{ selectedApproval.quotation.marginPct | number:'1.1-2' }}%
+                  <span class="rm-val font-bold mono" [class.text-danger]="getQuoteMargin(selectedApproval.quotation) < 18">
+                    {{ getQuoteMargin(selectedApproval.quotation) | number:'1.1-2' }}%
                   </span>
                 </div>
                 <div class="risk-metric">
                   <span class="rm-lbl">Risk Score</span>
-                  <span class="badge badge-danger">{{ selectedApproval.quotation.riskScore | number:'1.1-1' }} pts</span>
+                  <span class="badge badge-danger">{{ getQuoteRisk(selectedApproval.quotation, selectedApproval) | number:'1.1-1' }} pts</span>
                 </div>
                 <div class="risk-metric">
                   <span class="rm-lbl">Required SLA</span>
@@ -317,6 +316,11 @@ import { Subscription } from 'rxjs';
                       </td>
                       <td class="mono font-semibold">{{ c.weightedContribution | number:'1.2-2' }} pts</td>
                     </tr>
+                    <tr *ngIf="culpritDetails.length === 0">
+                      <td colspan="6" class="text-center py-3 text-muted">
+                        No policy overage lines detected for this quotation.
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -325,8 +329,8 @@ import { Subscription } from 'rxjs';
             <!-- Complete Order Items Table -->
             <div class="glass-panel items-panel">
               <div class="panel-header">
-                <h4>Quotation Structure ({{ selectedApproval.quotation.lines.length || 1 }} Line Items)</h4>
-                <span class="mono total-badge">Order Value: {{ formatCurrency(selectedApproval.quotation.totalAmount) }}</span>
+                <h4>Quotation Structure ({{ (selectedApproval.quotation?.lines?.length) || 1 }} Line Items)</h4>
+                <span class="mono total-badge">Order Value: {{ formatCurrency(selectedApproval.quotation?.totalAmount) }}</span>
               </div>
 
               <div class="table-container">
@@ -342,22 +346,22 @@ import { Subscription } from 'rxjs';
                     </tr>
                   </thead>
                   <tbody>
-                    <tr *ngFor="let line of selectedApproval.quotation.lines">
+                    <tr *ngFor="let line of selectedApproval.quotation?.lines">
                       <td>
-                        <strong>{{ line.product.name }}</strong>
-                        <div class="mono sku">{{ line.product.sku }} | {{ line.product.type }}</div>
+                        <strong>{{ line.product?.name || 'Line Item' }}</strong>
+                        <div class="mono sku">{{ line.product?.sku || ('PRD-' + (line.product?.id || line.id)) }} | {{ line.lineType || 'ONE_TIME' }}</div>
                       </td>
                       <td>{{ line.quantity }}</td>
-                      <td>{{ formatCurrency(line.unitListPrice || line.product.basePrice) }}</td>
+                      <td>{{ formatCurrency(getLineListPrice(line)) }}</td>
                       <td>
-                        <span [class.text-danger]="(line.unitDiscountPct || 0) > 15" class="mono font-semibold">
-                          {{ (line.unitDiscountPct || 0) | number:'1.1-1' }}%
+                        <span [class.text-danger]="getLineDiscountPct(line) > 15" class="mono font-semibold">
+                          {{ getLineDiscountPct(line) | number:'1.1-1' }}%
                         </span>
                       </td>
                       <td class="mono font-bold">{{ formatCurrency(line.lineTotal) }}</td>
                       <td>
-                        <span class="badge" [class.badge-success]="(line.lineMarginPct || 0) >= 30" [class.badge-warning]="(line.lineMarginPct || 0) >= 18 && (line.lineMarginPct || 0) < 30" [class.badge-danger]="(line.lineMarginPct || 0) < 18">
-                          {{ (line.lineMarginPct || 0) | number:'1.1-1' }}%
+                        <span class="badge" [class.badge-success]="getLineMarginPct(line) >= 30" [class.badge-warning]="getLineMarginPct(line) >= 18 && getLineMarginPct(line) < 30" [class.badge-danger]="getLineMarginPct(line) < 18">
+                          {{ getLineMarginPct(line) | number:'1.1-1' }}%
                         </span>
                       </td>
                     </tr>
@@ -753,31 +757,34 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
   // Sort & Pagination state
   sortColumn = 'riskScore';
   sortDirection: 'asc' | 'desc' = 'desc';
-  pageSize = 25;
+  pageSize = 10;
   currentPage = 1;
 
   // RBAC
   currentRole = 'ADMIN';
-  currentUserName = 'Md Sadique Amin (Admin)';
+  currentUserName = '';
   private subs = new Subscription();
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private approvalService: ApprovalService,
-    private authService: AuthService
+    private authService: AuthService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
         this.currentRole = role;
+        this.cdr.detectChanges();
       })
     );
 
     this.subs.add(
       this.authService.currentUser$.subscribe(user => {
         this.currentUserName = user.name;
+        this.cdr.detectChanges();
       })
     );
 
@@ -785,21 +792,17 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
   }
 
   loadApprovals(): void {
-    const quotes = generate120Quotations();
-    const fallbackApprovals = generate120Approvals(quotes);
-
     this.approvalService.getPendingRequests().subscribe({
       next: (data) => {
-        if (data && data.length > 0) {
-          this.approvals = data;
-        } else {
-          this.approvals = fallbackApprovals;
-        }
+        // Always use real backend data — empty array = no pending approvals (correct state)
+        this.approvals = data || [];
         this.initSelectedApproval();
+        this.cdr.detectChanges();
       },
-      error: () => {
-        this.approvals = fallbackApprovals;
+      error: (_err) => {
+        this.approvals = [];
         this.initSelectedApproval();
+        this.cdr.detectChanges();
       }
     });
   }
@@ -818,6 +821,7 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
       this.selectedApproval = this.approvals[0];
       this.parseCulprits(this.selectedApproval);
     }
+    this.cdr.detectChanges();
   }
 
   ngOnDestroy(): void {
@@ -828,18 +832,124 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
     this.selectedApproval = app;
     this.parseCulprits(app);
     this.activeTab = 'detail';
+    this.cdr.detectChanges();
   }
 
   parseCulprits(app: ApprovalRequest): void {
+    let parsed: LineOverageDetail[] = [];
     try {
-      if (app.culpritLineBreakdownJson) {
-        this.culpritDetails = JSON.parse(app.culpritLineBreakdownJson);
-      } else {
-        this.culpritDetails = [];
+      if (app.culpritLineBreakdownJson && app.culpritLineBreakdownJson.trim().length > 2) {
+        const raw = JSON.parse(app.culpritLineBreakdownJson);
+        if (Array.isArray(raw)) {
+          parsed = raw.filter((item: any) => item.isCulprit || item.overagePoints > 0 || item.overagePct > 0);
+        }
       }
     } catch (e) {
-      this.culpritDetails = [];
+      parsed = [];
     }
+
+    // Dynamic database fallback: compute culprits directly from quotation.lines if JSON breakdown was empty
+    if (parsed.length === 0 && app.quotation?.lines && app.quotation.lines.length > 0) {
+      const q = app.quotation;
+      const orderTotal = Number(q.totalAmount || q.subtotalAmount || 1);
+      parsed = q.lines.map((line: any) => {
+        const prodName = line.product?.name || 'Line Item';
+        const appliedDisc = Number(line.discountPercent ?? line.unitDiscountPct ?? 0);
+        const categoryCap = Number(line.product?.category?.maxDiscountPercent ?? line.product?.category?.maxDiscountCeilingPct ?? 10.0);
+        const overage = appliedDisc > categoryCap ? (appliedDisc - categoryCap) : Number(line.overagePoints || 0);
+        const lineVal = Number(line.lineTotal || 0);
+        const revWeight = orderTotal > 0 ? (lineVal / orderTotal) * 100 : 0;
+        const gamma = Number(line.product?.category?.sensitivityGamma ?? 1.5);
+        const contrib = (overage * revWeight * gamma) / 10;
+
+        return {
+          productName: prodName,
+          revenueWeightPct: Number(revWeight.toFixed(1)),
+          appliedDiscountPct: Number(appliedDisc.toFixed(1)),
+          allowedThresholdPct: Number(categoryCap.toFixed(1)),
+          overagePct: Number(overage.toFixed(1)),
+          weightedContribution: Number(contrib.toFixed(2)),
+          isCulprit: overage > 0 || line.status === 'OVER'
+        } as LineOverageDetail;
+      }).filter((c: any) => c.overagePct > 0 || c.isCulprit);
+    }
+
+    this.culpritDetails = parsed;
+    this.cdr.detectChanges();
+  }
+
+  getQuoteDiscount(q?: Quotation | any): number {
+    if (!q) return 0;
+    if (q.blendedDiscountPct != null && Number(q.blendedDiscountPct) > 0) return Number(q.blendedDiscountPct);
+    const sub = Number(q.subtotalAmount || 0);
+    const disc = Number(q.totalDiscountAmount || 0);
+    if (sub > 0 && disc > 0) {
+      return (disc / sub) * 100;
+    }
+    return 0;
+  }
+
+  getQuoteMargin(q?: Quotation | any): number {
+    if (!q) return 0;
+    if (q.marginPercentage != null && Number(q.marginPercentage) > 0) return Number(q.marginPercentage);
+    if (q.marginPct != null && Number(q.marginPct) > 0) return Number(q.marginPct);
+    const total = Number(q.totalAmount || 0);
+    const margin = Number(q.totalMarginAmount || 0);
+    if (total > 0 && margin > 0) {
+      return (margin / total) * 100;
+    }
+    const cost = Number(q.totalCost || 0);
+    if (total > 0 && cost > 0) {
+      return ((total - cost) / total) * 100;
+    }
+    return 0;
+  }
+
+  getQuoteRisk(q?: Quotation | any, app?: ApprovalRequest | any): number {
+    if (app?.blendedRiskScore != null && Number(app.blendedRiskScore) > 0) return Number(app.blendedRiskScore);
+    if (app?.riskScore != null && Number(app.riskScore) > 0) return Number(app.riskScore);
+    if (q?.blendedRiskScore != null && Number(q.blendedRiskScore) > 0) return Number(q.blendedRiskScore);
+    if (q?.riskScore != null && Number(q.riskScore) > 0) return Number(q.riskScore);
+    return 0;
+  }
+
+  getLineListPrice(line: any): number {
+    if (!line) return 0;
+    if (line.unitListPrice != null && Number(line.unitListPrice) > 0) return Number(line.unitListPrice);
+    if (line.unitPrice != null && Number(line.unitPrice) > 0) return Number(line.unitPrice);
+    if (line.product?.basePrice != null && Number(line.product.basePrice) > 0) return Number(line.product.basePrice);
+    return 0;
+  }
+
+  getLineDiscountPct(line: any): number {
+    if (!line) return 0;
+    if (line.discountPercent != null && Number(line.discountPercent) > 0) return Number(line.discountPercent);
+    if (line.unitDiscountPct != null && Number(line.unitDiscountPct) > 0) return Number(line.unitDiscountPct);
+    const list = this.getLineListPrice(line);
+    const qty = Number(line.quantity || 1);
+    const total = Number(line.lineTotal || 0);
+    if (list > 0 && qty > 0 && total > 0) {
+      const fullList = list * qty;
+      if (fullList > total) {
+        return ((fullList - total) / fullList) * 100;
+      }
+    }
+    return 0;
+  }
+
+  getLineMarginPct(line: any): number {
+    if (!line) return 0;
+    if (line.lineMarginPct != null && Number(line.lineMarginPct) > 0) return Number(line.lineMarginPct);
+    const total = Number(line.lineTotal || 0);
+    const margin = Number(line.marginAmount || 0);
+    if (total > 0 && margin > 0) {
+      return (margin / total) * 100;
+    }
+    const cost = Number(line.costPrice ?? line.product?.costPrice ?? 0) * Number(line.quantity || 1);
+    if (total > 0 && cost > 0) {
+      return ((total - cost) / total) * 100;
+    }
+    return 0;
   }
 
   get canSign(): boolean {

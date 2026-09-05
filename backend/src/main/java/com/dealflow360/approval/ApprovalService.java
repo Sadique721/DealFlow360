@@ -12,8 +12,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -24,21 +32,47 @@ public class ApprovalService {
     private final QuotationRepository quotationRepository;
     private final AuditService auditService;
     private final WebSocketPublisher webSocketPublisher;
+    private final com.dealflow360.warehouse.FulfillmentService fulfillmentService;
 
     public ApprovalService(ApprovalRequestRepository approvalRequestRepository,
                            ApprovalStepRepository approvalStepRepository,
                            QuotationRepository quotationRepository,
                            AuditService auditService,
                            WebSocketPublisher webSocketPublisher) {
+        this(approvalRequestRepository, approvalStepRepository, quotationRepository, auditService, webSocketPublisher, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ApprovalService(ApprovalRequestRepository approvalRequestRepository,
+                           ApprovalStepRepository approvalStepRepository,
+                           QuotationRepository quotationRepository,
+                           AuditService auditService,
+                           WebSocketPublisher webSocketPublisher,
+                           @Lazy com.dealflow360.warehouse.FulfillmentService fulfillmentService) {
         this.approvalRequestRepository = approvalRequestRepository;
         this.approvalStepRepository = approvalStepRepository;
         this.quotationRepository = quotationRepository;
         this.auditService = auditService;
         this.webSocketPublisher = webSocketPublisher;
+        this.fulfillmentService = fulfillmentService;
     }
 
     public List<ApprovalRequest> listPendingRequests() {
         return approvalRequestRepository.findByStatus("PENDING");
+    }
+
+    public List<ApprovalRequest> listPendingRequests(String role) {
+        List<ApprovalRequest> pending = approvalRequestRepository.findByStatus("PENDING");
+        if (role == null || role.isBlank() || "ADMIN".equalsIgnoreCase(role) || "SALES_MANAGER".equalsIgnoreCase(role)) {
+            return pending;
+        }
+        if ("FINANCE".equalsIgnoreCase(role)) {
+            return pending.stream()
+                    .filter(ar -> "FINANCE".equalsIgnoreCase(ar.getCurrentStage()) ||
+                            ar.getSteps().stream().anyMatch(s -> "FINANCE".equalsIgnoreCase(s.getRequiredRole())))
+                    .collect(Collectors.toList());
+        }
+        return pending;
     }
 
     public Optional<ApprovalRequest> getRequestByQuotationId(Long quotationId) {
@@ -173,6 +207,15 @@ public class ApprovalService {
                         "PENDING_APPROVAL", "APPROVED",
                         "Quotation fully approved across all governance tiers. Comments: " + request.getComments(),
                         BigDecimal.ZERO);
+
+                // Amin's Module Rule: Automatically trigger warehouse split optimizer on final approval
+                try {
+                    if (fulfillmentService != null) {
+                        fulfillmentService.generateOrRecomputePlan(quotation.getId());
+                    }
+                } catch (Exception e) {
+                    // Non-blocking if no physical lines exist in quotation
+                }
             }
         } else if ("REJECT".equalsIgnoreCase(action)) {
             currentStep.setStatus("REJECTED");

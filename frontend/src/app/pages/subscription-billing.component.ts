@@ -13,8 +13,8 @@ import {
   ProrationPreview,
   Quotation
 } from '../models/dealflow.model';
-import { generate120Subscriptions, generate120Quotations } from '../services/mock-data';
 import { Subscription as RxSubscription } from 'rxjs';
+
 
 @Component({
   selector: 'app-subscription-billing',
@@ -985,7 +985,7 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
   // Sort & Pagination
   sortColumn = 'mrr';
   sortDirection: 'asc' | 'desc' = 'desc';
-  pageSize = 25;
+  pageSize = 10;
   currentPage = 1;
 
   // Simulator Model State
@@ -1036,8 +1036,8 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    const quotes = generate120Quotations();
-    this.allContracts = generate120Subscriptions(quotes);
+    // Start with empty — real data loaded via API
+    this.allContracts = [];
 
     this.subs.add(
       this.authService.currentRole$.subscribe(role => {
@@ -1097,27 +1097,29 @@ export class SubscriptionBillingComponent implements OnInit, OnDestroy {
     this.subscriptionService.getSubscriptions().subscribe({
       next: (liveSubs) => {
         if (liveSubs && liveSubs.length > 0) {
-          // Prepend live database subscriptions to the master list
-          const mappedLive = liveSubs.map(s => ({
+          this.allContracts = liveSubs.map(s => ({
             id: s.id,
-            contractNumber: `SUB-LIVE-${s.id}`,
-            customerName: s.customer?.name || 'Live Enterprise Client',
-            customerTier: s.customer?.tier || 'GOLD',
+            contractNumber: s.contractNumber || `SUB-${String(s.id).padStart(4,'0')}`,
+            customerName: s.customer?.name || 'Enterprise Client',
+            customerTier: (s.customer?.tier || 'GOLD') as any,
             planName: s.planName,
             billingFrequency: (s.cycle || 'MONTHLY') as any,
             seatsCount: s.quantity || 1,
             unitSeatPrice: Math.round(((s.amount || 185) / Math.max(1, s.quantity || 1))),
-            monthlyRecurringRevenue: s.amount || 185,
-            annualContractValue: (s.amount || 185) * 12,
+            monthlyRecurringRevenue: s.cycle === 'ANNUAL' ? Math.round((s.amount || 0) / 12) : (s.amount || 0),
+            annualContractValue: s.cycle === 'ANNUAL' ? (s.amount || 0) : (s.amount || 0) * 12,
             startDate: s.startDate || '2026-09-01',
             nextRenewalDate: s.nextBillDate || '2026-10-01',
             status: s.status as any,
             prorationAmountAvailable: 0
           }));
-          this.allContracts = [...mappedLive, ...this.allContracts];
+        } else {
+          this.allContracts = [];
         }
       },
-      error: () => {}
+      error: () => {
+        this.allContracts = [];
+      }
     });
   }
 

@@ -65,7 +65,7 @@ public class AnomalyDetectionService {
         List<Quotation> stalled = quotationRepository.findStalledQuotations(threshold);
 
         for (Quotation q : stalled) {
-            Optional<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "STALLED");
+            List<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "STALLED");
             if (existing.isEmpty()) {
                 long days = java.time.Duration.between(q.getLastActivityAt(), LocalDateTime.now()).toDays();
                 String desc = String.format("Quotation %s for %s has been inactive for %d days (stage: %s). Exceeds %d-day stall threshold.",
@@ -134,7 +134,7 @@ public class AnomalyDetectionService {
                 double z = (currentTotalDiscount.doubleValue() - mean) / stdDev;
 
                 if (z >= zScoreThreshold || currentTotalDiscount.doubleValue() >= mean * anomalyMultiplier) {
-                    Optional<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "DISCOUNT_ANOMALY");
+                    List<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "DISCOUNT_ANOMALY");
                     if (existing.isEmpty()) {
                         String desc = String.format("Sales Rep %s applied %.2f%% discount on %s. Rep historical confirmed average is %.2f%% (Z-score = %.2f >= %.1f). Atypical discounting pattern detected.",
                                 q.getSalesRep().getName(), currentTotalDiscount.doubleValue(), q.getQuoteNumber(), mean, z, zScoreThreshold);
@@ -174,7 +174,7 @@ public class AnomalyDetectionService {
         for (Quotation q : quotes) {
             if (q.getPromisedDeliveryDate() != null && !("FULFILLED".equalsIgnoreCase(q.getStatus()) || "CLOSED".equalsIgnoreCase(q.getStatus()) || "REJECTED".equalsIgnoreCase(q.getStatus()))) {
                 if (q.getPromisedDeliveryDate().isBefore(now.plusDays(3))) {
-                    Optional<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "DELIVERY_SLIPPAGE");
+                    List<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(q.getId(), "DELIVERY_SLIPPAGE");
                     if (existing.isEmpty()) {
                         String desc = String.format("Quotation %s promised delivery date (%s) is within 3 days but order is in %s state. High delivery slippage risk.",
                                 q.getQuoteNumber(), q.getPromisedDeliveryDate(), q.getStatus());
@@ -199,7 +199,7 @@ public class AnomalyDetectionService {
     public void scanForSlaEscalation() {
         List<ApprovalStep> overdue = approvalStepRepository.findOverdueSteps(LocalDateTime.now());
         for (ApprovalStep step : overdue) {
-            Optional<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(step.getQuotation().getId(), "SLA_BREACH");
+            List<DealHealthFlag> existing = flagRepository.findByQuotationIdAndFlagTypeAndResolvedFalse(step.getQuotation().getId(), "SLA_BREACH");
             if (existing.isEmpty()) {
                 String desc = String.format("Approval step for quotation %s (%s) has exceeded the 2-hour SLA deadline. Auto-escalated to Executive Operations.",
                         step.getQuotation().getQuoteNumber(), step.getLevel());

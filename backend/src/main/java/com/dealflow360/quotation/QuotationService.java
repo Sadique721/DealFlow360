@@ -53,6 +53,9 @@ public class QuotationService {
     private final WebSocketPublisher webSocketPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Autowired(required = false)
+    private com.dealflow360.catalog.ApprovalChainRepository approvalChainRepository;
+
     @Autowired
     public QuotationService(QuotationRepository quotationRepository,
                             QuotationLineRepository quotationLineRepository,
@@ -654,8 +657,8 @@ public class QuotationService {
         }
 
         String status = quotation.getStatus();
-        if (!"DRAFT".equalsIgnoreCase(status) && !"RETURNED".equalsIgnoreCase(status) && !"UNDER_NEGOTIATION".equalsIgnoreCase(status)) {
-            throw new IllegalStateException("Cannot submit quotation in status: " + status + ". Only DRAFT, RETURNED, or UNDER_NEGOTIATION quotations can be submitted.");
+        if (!"DRAFT".equalsIgnoreCase(status) && !"RETURNED".equalsIgnoreCase(status) && !"UNDER_NEGOTIATION".equalsIgnoreCase(status) && !"SENT_TO_CUSTOMER".equalsIgnoreCase(status)) {
+            throw new IllegalStateException("Cannot submit quotation in status: " + status + ". Only DRAFT, RETURNED, UNDER_NEGOTIATION, or SENT_TO_CUSTOMER quotations can be submitted.");
         }
 
         recalculateQuotation(quotation);
@@ -724,8 +727,21 @@ public class QuotationService {
                 .build();
         request.getSteps().add(managerStep);
 
-        // Stage 2: Finance Step (if score > 10 or single line > 8pt)
-        if (risk.getRequiresFinance()) {
+        // Stage 2: Finance Step (if score > 10 or single line > 8pt or configured in approval_chains)
+        boolean requiresFinance = Boolean.TRUE.equals(risk.getRequiresFinance());
+        if (approvalChainRepository != null && risk.getBlendedRiskScore() != null) {
+            try {
+                List<com.dealflow360.catalog.ApprovalChain> chains = approvalChainRepository.findMatchingChains(risk.getBlendedRiskScore());
+                for (com.dealflow360.catalog.ApprovalChain chain : chains) {
+                    if (chain.getRequiredLevel() != null && chain.getRequiredLevel().toUpperCase().contains("FINANCE")) {
+                        requiresFinance = true;
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (requiresFinance) {
             ApprovalStep financeStep = ApprovalStep.builder()
                     .approvalRequest(request)
                     .quotation(quotation)

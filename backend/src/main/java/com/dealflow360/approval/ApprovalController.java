@@ -33,8 +33,9 @@ public class ApprovalController {
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN','SALES_MANAGER','FINANCE')")
     @Operation(summary = "List pending approval requests (ADMIN/SALES_MANAGER/FINANCE only)")
-    public ResponseEntity<List<ApprovalRequest>> listPendingApprovals() {
-        return ResponseEntity.ok(approvalService.listPendingRequests());
+    public ResponseEntity<List<ApprovalRequest>> listPendingApprovals(@AuthenticationPrincipal AuthUser authUser) {
+        String role = authUser != null && authUser.getUser() != null ? authUser.getUser().getRole() : null;
+        return ResponseEntity.ok(approvalService.listPendingRequests(role));
     }
 
     /**

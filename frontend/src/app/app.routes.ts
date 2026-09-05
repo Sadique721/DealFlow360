@@ -157,7 +157,7 @@ export const routes: Routes = [
         path: 'invoices',
         component: InvoicesComponent,
         canActivate: [roleGuard],
-        data: { roles: ['ADMIN', 'FINANCE'], module: 'invoices' }
+        data: { roles: ['ADMIN', 'FINANCE', 'SALES_MANAGER'], module: 'invoices' }
       },
       {
         path: 'deal-health',

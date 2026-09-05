@@ -321,7 +321,7 @@ import { Warehouse, WarehouseStock, Product } from '../models/dealflow.model';
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let s of filteredStocks; trackBy: trackStock">
+                <tr *ngFor="let s of pagedStocks; trackBy: trackStock">
                   <td>
                     <div class="font-semibold text-gray-900">{{ s.product?.name || 'Unknown Product' }}</div>
                     <div class="text-xs text-muted font-mono">Product ID: #{{ s.product?.id }}</div>
@@ -371,6 +371,30 @@ import { Warehouse, WarehouseStock, Product } from '../models/dealflow.model';
                 </tr>
               </tbody>
             </table>
+
+            <!-- Table Pagination Toolbar -->
+            <div class="table-pagination-bar" *ngIf="filteredStocks.length > 0">
+              <div class="pagination-info">
+                Showing <strong>{{ stockPaginationStart }}</strong> to <strong>{{ stockPaginationEnd }}</strong> of <strong>{{ filteredStocks.length }}</strong> inventory items
+              </div>
+              <div class="pagination-controls">
+                <div class="page-size-selector">
+                  <span class="text-muted">Per page:</span>
+                  <select class="form-control form-control-sm select-page-size" [(ngModel)]="pageSize" (change)="stockPage = 1">
+                    <option [ngValue]="10">10</option>
+                    <option [ngValue]="25">25</option>
+                    <option [ngValue]="50">50</option>
+                  </select>
+                </div>
+                <div class="page-nav-buttons">
+                  <button class="btn btn-outline btn-xs" (click)="stockPage = 1" [disabled]="stockPage === 1">« First</button>
+                  <button class="btn btn-outline btn-xs" (click)="stockPage = stockPage - 1" [disabled]="stockPage === 1">‹ Prev</button>
+                  <span class="page-number-display">Page {{ stockPage }} of {{ totalStockPages }}</span>
+                  <button class="btn btn-outline btn-xs" (click)="stockPage = stockPage + 1" [disabled]="stockPage >= totalStockPages">Next ›</button>
+                  <button class="btn btn-outline btn-xs" (click)="stockPage = totalStockPages" [disabled]="stockPage >= totalStockPages">Last »</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1123,14 +1147,52 @@ import { Warehouse, WarehouseStock, Product } from '../models/dealflow.model';
       animation: spin 0.8s linear infinite;
     }
 
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .table-pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 20px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      border-radius: 0 0 12px 12px;
+      font-size: 13px;
     }
-
-    @media (max-width: 900px) {
-      .grid-4 {
-        grid-template-columns: repeat(2, 1fr);
-      }
+    .pagination-info {
+      color: #64748b;
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .page-size-selector {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .select-page-size {
+      width: 60px;
+      padding: 2px 6px;
+      height: 28px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #0f172a;
+    }
+    .page-nav-buttons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .page-number-display {
+      padding: 0 6px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .btn-xs {
+      padding: 3px 8px;
+      font-size: 12px;
+      border-radius: 6px;
     }
   `]
 })
@@ -1316,6 +1378,9 @@ export class WarehouseManagementComponent implements OnInit, OnDestroy {
     });
   }
 
+  stockPage = 1;
+  pageSize = 10;
+
   get filteredStocks(): WarehouseStock[] {
     return this.stocks.filter(s => {
       const q = this.searchInventory.trim().toLowerCase();
@@ -1327,6 +1392,23 @@ export class WarehouseManagementComponent implements OnInit, OnDestroy {
 
       return matchesSearch && matchesStatus;
     });
+  }
+
+  get pagedStocks(): WarehouseStock[] {
+    const start = (this.stockPage - 1) * this.pageSize;
+    return this.filteredStocks.slice(start, start + this.pageSize);
+  }
+
+  get totalStockPages(): number {
+    return Math.ceil(this.filteredStocks.length / this.pageSize) || 1;
+  }
+
+  get stockPaginationStart(): number {
+    return this.filteredStocks.length === 0 ? 0 : (this.stockPage - 1) * this.pageSize + 1;
+  }
+
+  get stockPaginationEnd(): number {
+    return Math.min(this.stockPage * this.pageSize, this.filteredStocks.length);
   }
 
   get activeWarehousesCount(): number {

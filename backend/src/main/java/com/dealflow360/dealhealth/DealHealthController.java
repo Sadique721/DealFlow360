@@ -19,7 +19,7 @@ public class DealHealthController {
         this.anomalyDetectionService = anomalyDetectionService;
     }
 
-    @GetMapping
+    @GetMapping({"" , "/flags"})
     @Operation(summary = "Get all active deal health and anomaly alert flags")
     public ResponseEntity<List<DealHealthFlag>> getActiveFlags() {
         return ResponseEntity.ok(anomalyDetectionService.getActiveFlags());
