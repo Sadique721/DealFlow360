@@ -250,4 +250,59 @@ public class NegotiationService {
                 "message", "Quotation successfully confirmed! Fulfillment splits and invoice generated."
         );
     }
+
+    public List<NegotiationMessage> getMessagesForQuotation(Long quotationId) {
+        return negotiationMessageRepository.findByQuotationIdOrderByCreatedAtAsc(quotationId);
+    }
+
+    public NegotiationMessage submitMessageByQuoteId(Long quotationId, NegotiationProposalRequest request, String senderRole, String senderName) {
+        Quotation quote = quotationRepository.findById(quotationId)
+                .orElseThrow(() -> new RuntimeException("Quotation not found: " + quotationId));
+
+        if (request.getLineReferenceId() != null && request.getCounterDiscountPercent() != null) {
+            for (QuotationLine line : quote.getLines()) {
+                if (line.getId().equals(request.getLineReferenceId())) {
+                    line.setDiscountPercent(request.getCounterDiscountPercent());
+                    BigDecimal factor = BigDecimal.ONE.subtract(request.getCounterDiscountPercent().divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                    line.setLineTotal(line.getUnitPrice().multiply(BigDecimal.valueOf(line.getQuantity())).multiply(factor).setScale(2, RoundingMode.HALF_UP));
+                    break;
+                }
+            }
+            quotationService.recalculateQuotation(quote);
+        }
+
+        if (request.getRequestedDeliveryDate() != null) {
+            quote.setPromisedDeliveryDate(request.getRequestedDeliveryDate());
+        }
+
+        quote.setLastActivityAt(LocalDateTime.now());
+        quotationRepository.save(quote);
+
+        String actualSenderName = (senderName != null && !senderName.isBlank()) ? senderName : ("SALES_REP".equalsIgnoreCase(senderRole) ? "Sales Team" : "User");
+
+        NegotiationMessage msg = NegotiationMessage.builder()
+                .quotationId(quote.getId())
+                .senderRole(senderRole != null ? senderRole : "SALES_REP")
+                .senderName(actualSenderName)
+                .message(request.getMessage() != null ? request.getMessage() : "")
+                .lineReferenceId(request.getLineReferenceId())
+                .counterDiscountPercent(request.getCounterDiscountPercent())
+                .requestedDeliveryDate(request.getRequestedDeliveryDate())
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        NegotiationMessage savedMsg = negotiationMessageRepository.save(msg);
+        auditService.log("NEGOTIATION_MESSAGE", quote.getId(), "MESSAGE_POSTED", actualSenderName,
+                null, senderRole, savedMsg.getMessage(), BigDecimal.ZERO);
+        webSocketPublisher.publishNegotiationMessage(quote.getId(), Map.of(
+                "quotationId", quote.getId(),
+                "quoteNumber", quote.getQuoteNumber(),
+                "senderRole", savedMsg.getSenderRole(),
+                "senderName", savedMsg.getSenderName(),
+                "message", savedMsg.getMessage()
+        ));
+        return savedMsg;
+    }
 }
+
+

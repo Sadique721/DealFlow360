@@ -32,18 +32,22 @@ public class QuotationController {
     private final com.dealflow360.warehouse.FulfillmentService fulfillmentService;
     private final com.dealflow360.upsell.UpsellService upsellService;
     private final com.dealflow360.subscription.SubscriptionService subscriptionService;
+    private final com.dealflow360.negotiation.NegotiationService negotiationService;
 
     public QuotationController(QuotationService quotationService,
                                ApprovalService approvalService,
                                com.dealflow360.warehouse.FulfillmentService fulfillmentService,
                                com.dealflow360.upsell.UpsellService upsellService,
-                               com.dealflow360.subscription.SubscriptionService subscriptionService) {
+                               com.dealflow360.subscription.SubscriptionService subscriptionService,
+                               com.dealflow360.negotiation.NegotiationService negotiationService) {
         this.quotationService = quotationService;
         this.approvalService = approvalService;
         this.fulfillmentService = fulfillmentService;
         this.upsellService = upsellService;
         this.subscriptionService = subscriptionService;
+        this.negotiationService = negotiationService;
     }
+
 
     @GetMapping
     @Operation(summary = "List quotations with role-based scoping and optional filters")
@@ -278,4 +282,22 @@ public class QuotationController {
 
         return ResponseEntity.ok(summary);
     }
+
+    @GetMapping("/{id}/messages")
+    @Operation(summary = "Get negotiation/discussion messages for a quotation")
+    public ResponseEntity<List<com.dealflow360.negotiation.NegotiationMessage>> getQuotationMessages(@PathVariable Long id) {
+        return ResponseEntity.ok(negotiationService.getMessagesForQuotation(id));
+    }
+
+    @PostMapping("/{id}/messages")
+    @Operation(summary = "Post a discussion message/reply to a quotation")
+    public ResponseEntity<com.dealflow360.negotiation.NegotiationMessage> submitQuotationMessage(
+            @PathVariable Long id,
+            @RequestBody com.dealflow360.negotiation.dto.NegotiationProposalRequest request,
+            @AuthenticationPrincipal AuthUser authUser) {
+        String role = authUser != null && authUser.getUser() != null ? authUser.getUser().getRole() : "SALES_REP";
+        String name = authUser != null ? authUser.getName() : "Sales Representative";
+        return ResponseEntity.ok(negotiationService.submitMessageByQuoteId(id, request, role, name));
+    }
 }
+

@@ -1112,11 +1112,19 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
     this.approvalService.processDecision(quoteId, action, comments).subscribe({
       next: (res) => {
         if (action === 'APPROVE') {
-          this.selectedApproval!.status = res?.status || 'APPROVED';
+          const reqStatus = res?.status || 'APPROVED';
+          const stage = res?.currentStage;
+
+          this.selectedApproval!.status = reqStatus;
           if (this.selectedApproval!.quotation) {
-            this.selectedApproval!.quotation.status = res?.status === 'APPROVED' ? 'APPROVED' : 'PENDING_APPROVAL';
+            this.selectedApproval!.quotation.status = reqStatus === 'APPROVED' ? 'APPROVED' : 'PENDING_APPROVAL';
           }
-          alert(`Quotation ${this.selectedApproval!.quotation?.quoteNumber || quoteId} successfully approved! Action logged to immutable audit trail.`);
+
+          if (reqStatus === 'PENDING' && (stage === 'FINANCE' || stage === 'LEVEL_2_FINANCE')) {
+            alert(`✅ Stage 1 (Sales Manager) Approved!\nProposal escalated to Stage 2 (Finance Operations) for final sign-off.`);
+          } else {
+            alert(`🎉 Quotation ${this.selectedApproval!.quotation?.quoteNumber || quoteId} fully APPROVED across all governance tiers!\nAction logged to immutable audit trail.`);
+          }
         } else if (action === 'REJECT') {
           this.selectedApproval!.status = 'REJECTED';
           if (this.selectedApproval!.quotation) {
@@ -1130,6 +1138,7 @@ export class ApprovalCenterComponent implements OnInit, OnDestroy {
           }
           alert(`Quotation ${this.selectedApproval!.quotation?.quoteNumber || quoteId} returned to Sales Representative for margin rebalance.`);
         }
+        this.decisionComments = '';
         this.loadApprovals();
       },
       error: (err) => {

@@ -24,4 +24,9 @@ public class SignupRequest {
 
     @Builder.Default
     private String team = "Global Sales";
+
+    private String tier;
+    private String phone;
+    private String address;
+    private String contactPerson;
 }

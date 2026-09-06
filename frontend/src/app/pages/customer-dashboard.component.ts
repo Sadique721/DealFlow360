@@ -275,9 +275,17 @@ interface CustomerQuote {
 
             <!-- Messages -->
             <div class="glass-panel cust-chat-card">
-              <h3 class="cust-card-title">💬 Direct Discussion with Sales Team</h3>
-              <p class="cust-card-sub">Ask questions or propose changes without any email back-and-forth.</p>
+              <div class="cust-chat-header-row">
+                <div>
+                  <h3 class="cust-card-title" style="margin: 0;">💬 Direct Discussion with Sales Team</h3>
+                  <p class="cust-card-sub" style="margin: 2px 0 0 0;">Ask questions or propose changes without any email back-and-forth.</p>
+                </div>
+                <button class="cust-refresh-btn" (click)="refreshFeed()" [disabled]="isRefreshingFeed">
+                  {{ isRefreshingFeed ? '🔄 Refreshing...' : '🔄 Refresh Feed' }}
+                </button>
+              </div>
               <div class="cust-messages" #msgFeed>
+
                 <div *ngIf="!activeQuote.messages || activeQuote.messages.length === 0" class="cust-no-msgs">
                   No messages yet. Start the conversation below!
                 </div>
@@ -863,7 +871,31 @@ interface CustomerQuote {
     .grand-val { color: #2563eb; font-size: 20px; }
 
     /* Messages */
+    .cust-chat-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .cust-refresh-btn {
+      background: #f8fafc;
+      color: #2563eb;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .cust-refresh-btn:hover:not(:disabled) {
+      background: #eff6ff;
+      border-color: #93c5fd;
+    }
     .cust-messages {
+
       max-height: 260px;
       overflow-y: auto;
       display: flex;
@@ -1162,6 +1194,7 @@ export class CustomerDashboardComponent implements OnInit, OnDestroy {
     this.activeQuote = q;
     this.newMessage = '';
     this.counterDiscountPct = undefined;
+    this.refreshFeed();
     this.cdr.detectChanges();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1170,6 +1203,25 @@ export class CustomerDashboardComponent implements OnInit, OnDestroy {
     this.activeQuote = null;
     this.cdr.detectChanges();
   }
+
+  isRefreshingFeed = false;
+
+  refreshFeed(): void {
+    if (!this.activeQuote) return;
+    this.isRefreshingFeed = true;
+    const currentId = this.activeQuote.id;
+    this.api.get<any[]>(`quotations/${currentId}/messages`).pipe(
+      timeout(5000),
+      catchError(() => of([]))
+    ).subscribe(msgs => {
+      this.isRefreshingFeed = false;
+      if (this.activeQuote && msgs && msgs.length > 0) {
+        this.activeQuote.messages = msgs;
+      }
+      this.cdr.detectChanges();
+    });
+  }
+
 
   sendMessage(): void {
     if (!this.newMessage.trim() || !this.activeQuote) return;

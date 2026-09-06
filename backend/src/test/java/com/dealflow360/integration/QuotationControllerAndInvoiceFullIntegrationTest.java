@@ -12,6 +12,7 @@ import com.dealflow360.discount.RiskCalculationResult;
 import com.dealflow360.invoice.Invoice;
 import com.dealflow360.invoice.InvoiceController;
 import com.dealflow360.invoice.InvoiceService;
+import com.dealflow360.negotiation.NegotiationService;
 import com.dealflow360.quotation.Quotation;
 import com.dealflow360.quotation.QuotationController;
 import com.dealflow360.quotation.QuotationService;
@@ -36,22 +37,23 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-class QuotationControllerAndInvoiceFullIntegrationTest {
+@DisplayName("QuotationController & Commercial Invoice End-to-End Integration Unit Test Suite")
+public class QuotationControllerAndInvoiceFullIntegrationTest {
 
     private QuotationService quotationService;
     private ApprovalService approvalService;
     private FulfillmentService fulfillmentService;
     private UpsellService upsellService;
     private SubscriptionService subscriptionService;
-    private QuotationController quotationController;
-
+    private NegotiationService negotiationService;
     private InvoiceService invoiceService;
-    private InvoiceController invoiceController;
-
     private ApprovalStepRepository approvalStepRepository;
     private AuditService auditService;
     private WebSocketPublisher webSocketPublisher;
     private ApprovalSlaEscalationScheduler slaScheduler;
+
+    private QuotationController quotationController;
+    private InvoiceController invoiceController;
 
     private Quotation testQuotation;
     private Customer testCustomer;
@@ -64,13 +66,15 @@ class QuotationControllerAndInvoiceFullIntegrationTest {
         fulfillmentService = mock(FulfillmentService.class);
         upsellService = mock(UpsellService.class);
         subscriptionService = mock(SubscriptionService.class);
+        negotiationService = mock(NegotiationService.class);
 
         quotationController = new QuotationController(
                 quotationService,
                 approvalService,
                 fulfillmentService,
                 upsellService,
-                subscriptionService
+                subscriptionService,
+                negotiationService
         );
 
         invoiceService = mock(InvoiceService.class);

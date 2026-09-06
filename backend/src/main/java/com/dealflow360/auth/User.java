@@ -29,9 +29,22 @@ public class User {
     @Column(nullable = false, length = 50)
     private String role; // ADMIN, SALES_REP, SALES_MANAGER, FINANCE, CUSTOMER
 
-    @Column(length = 100)
+    @Column(length = 50)
     @Builder.Default
     private String team = "Global Sales";
+
+    @Column(length = 50)
+    @Builder.Default
+    private String tier = "BRONZE"; // BRONZE, SILVER, GOLD, PLATINUM, ENTERPRISE
+
+    @Column(length = 50)
+    private String phone;
+
+    @Column(columnDefinition = "TEXT")
+    private String address;
+
+    @Column(name = "contact_person", length = 100)
+    private String contactPerson;
 
     @Builder.Default
     private Boolean active = true;

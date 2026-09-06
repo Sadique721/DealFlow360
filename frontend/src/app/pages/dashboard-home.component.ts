@@ -251,32 +251,23 @@ export class DashboardHomeComponent implements OnInit {
   roleBorderColor = '#bfdbfe';
 
   stats = [
-    { label: 'Total Quotations',  value: '--',  change: '', up: true  },
-    { label: 'Pipeline Value',    value: '--',  change: '', up: true  },
-    { label: 'Pending Approvals', value: '--',  change: '', up: false },
-    { label: 'Active Contracts',  value: '--',  change: '', up: true  }
+    { label: 'Total Quotations',  value: '0',  change: 'Live DB', up: true  },
+    { label: 'Pipeline Value',    value: '₹0', change: 'Live DB', up: true  },
+    { label: 'Pending Approvals', value: '0',  change: 'Live DB', up: false },
+    { label: 'Active Contracts',  value: '0',  change: 'Live DB', up: true  }
   ];
 
   quickLinks = [
-    { icon: '📋', label: 'Quotations',   path: '/dashboard/pipeline',     desc: 'View and manage all quotes', badge: '41' },
-    { icon: '✅', label: 'Approvals',    path: '/dashboard/approval',     desc: 'Review pending approval queue', badge: '8' },
-    { icon: '🏭', label: 'Fulfillment',  path: '/dashboard/fulfillment',  desc: 'Manage warehouse splits', badge: '8' },
-    { icon: '🔄', label: 'Subscription', path: '/dashboard/subscription', desc: 'Billing and renewals', badge: '20' },
-    { icon: '💰', label: 'Invoices',     path: '/dashboard/invoices',     desc: 'Track and issue invoices', badge: '21' },
+    { icon: '📋', label: 'Quotations',   path: '/dashboard/pipeline',     desc: 'View and manage all quotes', badge: '0' },
+    { icon: '✅', label: 'Approvals',    path: '/dashboard/approval',     desc: 'Review pending approval queue', badge: '0' },
+    { icon: '🏭', label: 'Fulfillment',  path: '/dashboard/fulfillment',  desc: 'Manage warehouse splits', badge: '0' },
+    { icon: '🔄', label: 'Subscription', path: '/dashboard/subscription', desc: 'Billing and renewals', badge: '0' },
+    { icon: '💰', label: 'Invoices',     path: '/dashboard/invoices',     desc: 'Track and issue invoices', badge: '0' },
     { icon: '📊', label: 'Deal Health',  path: '/dashboard/deal-health',  desc: 'AI-powered risk radar', badge: 'Live' },
     { icon: '📈', label: 'Reports',      path: '/dashboard/reports',      desc: 'Pipeline & performance', badge: 'CSV' },
   ];
 
-  activity = [
-    { text: 'Quote #Q-2026-0142 submitted for approval by Jay Rao',         time: '2 minutes ago',   color: '#2563eb' },
-    { text: 'Anand Joshi approved Quote #Q-2026-0138 (Level 1)',             time: '14 minutes ago',  color: '#16a34a' },
-    { text: 'Warehouse split for Order #ORD-0092 assigned to Pune & Mumbai', time: '1 hour ago',      color: '#d97706' },
-    { text: 'Subscription SUB-2026-012 renewed — Zenith Systems',           time: '2 hours ago',     color: '#7c3aed' },
-    { text: 'Deal Health alert: Quote #Q-2026-0117 flagged as at-risk',      time: '3 hours ago',     color: '#dc2626' },
-    { text: 'New customer quote request from Apex Logistics',                time: '5 hours ago',     color: '#0284c7' },
-    { text: 'Invoice INV-2026-0088 sent to Tata Consultancy Services',       time: 'Yesterday',       color: '#16a34a' },
-    { text: 'Priya Desai approved discount override — Quote #Q-2026-0122',   time: 'Yesterday',       color: '#7c3aed' },
-  ];
+  activity: { text: string; time: string; color: string }[] = [];
 
   constructor(
     private authService: AuthService,
@@ -311,18 +302,18 @@ export class DashboardHomeComponent implements OnInit {
         return forkJoin({
           quotations:    this.api.get<any[]>('quotations').pipe(catchError(() => of([]))),
           approvals:     this.api.get<any[]>('approvals').pipe(catchError(() => of([]))),
-          subscriptions: this.api.get<any[]>('subscriptions').pipe(catchError(() => of([])))
+          subscriptions: this.api.get<any[]>('subscriptions').pipe(catchError(() => of([]))),
+          invoices:      this.api.get<any[]>('invoices').pipe(catchError(() => of([])))
         }).pipe(
           catchError(() => of(null))
         );
       })
     ).subscribe((data: any) => {
       if (!data) {
-        // Fallback defaults if unauthenticated or network error so cards are never empty
-        this.stats[0] = { label: 'Total Quotations',  value: '41',       change: 'Live DB', up: true };
-        this.stats[1] = { label: 'Pipeline Value',    value: '₹1.70 L', change: 'Live DB', up: true };
-        this.stats[2] = { label: 'Pending Approvals', value: '8',        change: 'Live DB', up: false };
-        this.stats[3] = { label: 'Active Contracts',  value: '20',       change: 'Live DB', up: true };
+        this.stats[0] = { label: 'Total Quotations',  value: '0', change: 'Live DB', up: true };
+        this.stats[1] = { label: 'Pipeline Value',    value: '₹0', change: 'Live DB', up: true };
+        this.stats[2] = { label: 'Pending Approvals', value: '0', change: 'Live DB', up: false };
+        this.stats[3] = { label: 'Active Contracts',  value: '0', change: 'Live DB', up: true };
         this.cdr.detectChanges();
         return;
       }
@@ -334,38 +325,46 @@ export class DashboardHomeComponent implements OnInit {
           ? '₹' + (pVal / 100000).toFixed(2) + ' L'
           : '₹' + (pVal / 1000).toFixed(1) + ' K';
 
-        this.stats[0] = { label: 'Total Quotations',  value: String(data.totalQuotations || 0),    change: 'Live DB', up: true };
-        this.stats[1] = { label: 'Pipeline Value',    value: pipelineStr,                         change: 'Live DB', up: true };
-        this.stats[2] = { label: 'Pending Approvals', value: String(data.pendingApprovalsCount || 0), change: 'Live DB', up: false };
+        const totalQ = data.totalQuotations != null ? data.totalQuotations : 0;
+        const pendingA = data.pendingApprovalsCount != null ? data.pendingApprovalsCount : 0;
+        const activeC = data.activeContractsCount != null ? data.activeContractsCount : 0;
 
-        const activeContracts = data.activeContractsCount !== undefined ? data.activeContractsCount : 0;
-        this.stats[3] = { label: 'Active Contracts',  value: String(activeContracts),              change: 'Live DB', up: true };
+        this.stats[0] = { label: 'Total Quotations',  value: String(totalQ),   change: 'Live DB', up: true };
+        this.stats[1] = { label: 'Pipeline Value',    value: pipelineStr,     change: 'Live DB', up: true };
+        this.stats[2] = { label: 'Pending Approvals', value: String(pendingA), change: 'Live DB', up: false };
+        this.stats[3] = { label: 'Active Contracts',  value: String(activeC),  change: 'Live DB', up: true };
 
-        if (data.activeContractsCount === undefined) {
-          this.api.get<any[]>('subscriptions').pipe(catchError(() => of([]))).subscribe(subs => {
-            const active = (subs || []).filter((s: any) => s.status === 'ACTIVE').length;
-            this.stats[3] = { label: 'Active Contracts', value: String(active), change: 'Live DB', up: true };
-            this.cdr.detectChanges();
-          });
-        }
+        this.updateQuickBadges(totalQ, pendingA, activeC);
       } else {
         // Fallback forkJoin response
-        const { quotations, approvals, subscriptions } = data;
+        const { quotations, approvals, subscriptions, invoices } = data;
         const totalQuotes = (quotations || []).length;
         const pipelineValue = (quotations || []).reduce((s: number, q: any) => s + (Number(q.totalAmount) || 0), 0);
         const pending = (approvals || []).filter((a: any) => a.status === 'PENDING').length;
         const activeContracts = (subscriptions || []).filter((s: any) => s.status === 'ACTIVE').length;
+        const invoiceCount = (invoices || []).length;
 
         const pipelineStr = pipelineValue >= 100000 
           ? '₹' + (pipelineValue / 100000).toFixed(2) + ' L'
           : '₹' + (pipelineValue / 1000).toFixed(1) + ' K';
 
-        this.stats[0] = { label: 'Total Quotations',  value: String(totalQuotes || 41),   change: 'Live DB', up: true };
-        this.stats[1] = { label: 'Pipeline Value',    value: pipelineStr,                 change: 'Live DB', up: true };
-        this.stats[2] = { label: 'Pending Approvals', value: String(pending || 8),        change: 'Live DB', up: false };
-        this.stats[3] = { label: 'Active Contracts',  value: String(activeContracts || 20), change: 'Live DB', up: true };
+        this.stats[0] = { label: 'Total Quotations',  value: String(totalQuotes), change: 'Live DB', up: true };
+        this.stats[1] = { label: 'Pipeline Value',    value: pipelineStr,         change: 'Live DB', up: true };
+        this.stats[2] = { label: 'Pending Approvals', value: String(pending),     change: 'Live DB', up: false };
+        this.stats[3] = { label: 'Active Contracts',  value: String(activeContracts), change: 'Live DB', up: true };
+
+        this.updateQuickBadges(totalQuotes, pending, activeContracts, invoiceCount);
       }
       this.cdr.detectChanges();
+    });
+  }
+
+  private updateQuickBadges(quotes: number, pending: number, activeContracts: number, invoicesCount = 0) {
+    this.quickLinks.forEach(q => {
+      if (q.path === '/dashboard/pipeline') q.badge = String(quotes);
+      if (q.path === '/dashboard/approval') q.badge = String(pending);
+      if (q.path === '/dashboard/subscription') q.badge = String(activeContracts);
+      if (q.path === '/dashboard/invoices' && invoicesCount > 0) q.badge = String(invoicesCount);
     });
   }
 
@@ -393,6 +392,10 @@ export class DashboardHomeComponent implements OnInit {
             color
           };
         });
+      } else {
+        this.activity = [
+          { text: 'Workspace initialized — awaiting user actions', time: 'Just now', color: '#64748b' }
+        ];
       }
       this.cdr.detectChanges();
     });

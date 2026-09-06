@@ -15,4 +15,8 @@ public class LoginResponse {
     private String email;
     private String role;
     private String team;
+    private String tier;
+    private String phone;
+    private String address;
+    private String contactPerson;
 }

@@ -430,7 +430,73 @@ import { catchError, timeout } from 'rxjs/operators';
                 </button>
               </div>
             </div>
+
+            <!-- DIRECT DISCUSSION & NEGOTIATION FEED PANEL -->
+            <div class="glass-panel chat-panel" *ngIf="!isCreateMode && quote">
+
+              <div class="chat-header">
+                <div class="chat-title-row">
+                  <span class="chat-icon">💬</span>
+                  <div>
+                    <h4 style="margin:0; font-size: 16px; font-weight: 700; color: #0f172a;">
+                      Direct Discussion & Negotiation Feed
+                    </h4>
+                    <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">
+                      Live communication feed with customer <strong>{{ quote.customer?.name || 'Customer' }}</strong>
+                    </p>
+                  </div>
+                </div>
+                <button class="btn btn-outline btn-xs" (click)="loadMessages()" [disabled]="isLoadingMessages">
+                  {{ isLoadingMessages ? '🔄 Refreshing...' : '🔄 Refresh Feed' }}
+                </button>
+              </div>
+
+              <div class="chat-messages-box">
+                <div *ngIf="messages.length === 0" class="empty-chat-msg">
+                  No negotiation messages yet. Customer can submit questions or counter-offers from their portal.
+                </div>
+                <div
+                  *ngFor="let m of messages"
+                  class="chat-bubble"
+                  [class.chat-bubble-customer]="m.senderRole === 'CUSTOMER'"
+                  [class.chat-bubble-rep]="m.senderRole !== 'CUSTOMER'"
+                >
+                  <div class="chat-bubble-header">
+                    <span class="sender-name">
+                      {{ m.senderRole === 'CUSTOMER' ? '👤 Customer' : '💼 Sales Exec' }}:
+                      <strong>{{ m.senderName || (m.senderRole === 'CUSTOMER' ? quote.customer?.name : 'Sales Team') }}</strong>
+                    </span>
+                    <span class="chat-timestamp">{{ (m.createdAt || m.timestamp) | date:'short' }}</span>
+                  </div>
+                  <div class="chat-bubble-body">
+                    {{ m.message }}
+                    <div *ngIf="m.counterDiscountPercent" class="counter-offer-badge">
+                      🏷️ Proposed {{ m.counterDiscountPercent }}% discount on Line item #{{ m.lineReferenceId || '1' }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="chat-reply-input">
+                <textarea
+                  class="form-control"
+                  rows="2"
+                  placeholder="Type a message or reply to customer..."
+                  [(ngModel)]="newChatMessage"
+                  [disabled]="isSendingMessage"
+                ></textarea>
+                <button
+                  class="btn btn-primary btn-sm"
+                  (click)="sendChatMessage()"
+                  [disabled]="isSendingMessage || !newChatMessage.trim()"
+                  style="font-weight: 700;"
+                >
+                  {{ isSendingMessage ? 'Sending...' : 'Send Reply 🚀' }}
+                </button>
+              </div>
+            </div>
           </div>
+
 
           <!-- Right: Real-time Live Margin Gauge & Risk Radar -->
           <div class="sidebar-column">
@@ -1239,6 +1305,90 @@ import { catchError, timeout } from 'rxjs/operators';
       align-items: center;
       gap: 12px;
     }
+
+    /* Negotiation Chat Panel */
+    .chat-panel {
+      padding: 18px 22px;
+      margin-top: 18px;
+      border: 1px solid #e2e8f0;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    .chat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .chat-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .chat-icon { font-size: 22px; }
+    .chat-messages-box {
+      max-height: 280px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-right: 4px;
+    }
+    .empty-chat-msg {
+      text-align: center;
+      padding: 24px;
+      color: #94a3b8;
+      font-size: 13px;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+    .chat-bubble {
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      max-width: 85%;
+    }
+    .chat-bubble-customer {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      align-self: flex-start;
+    }
+    .chat-bubble-rep {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      align-self: flex-end;
+    }
+    .chat-bubble-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .sender-name { font-size: 11px; font-weight: 700; color: #1e293b; }
+    .chat-timestamp { font-size: 10.5px; color: #64748b; }
+    .chat-bubble-body { color: #334155; line-height: 1.5; }
+    .counter-offer-badge {
+      display: inline-block;
+      margin-top: 6px;
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .chat-reply-input {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
   `]
 })
 export class QuoteBuilderComponent implements OnInit, OnDestroy {
@@ -1246,6 +1396,12 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
   quoteId: number | null = null;
   quote?: Quotation;
   lines: QuotationLine[] = [];
+
+  messages: any[] = [];
+  newChatMessage: string = '';
+  isLoadingMessages: boolean = false;
+  isSendingMessage: boolean = false;
+
 
   availableCustomers: Customer[] = [];
   availablePriceLists: PriceList[] = [];
@@ -1442,6 +1598,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
           }
           this.applyQuoteData(q);
           this.loadUpsells(id);
+          this.loadMessages();
           this.cdr.detectChanges();
         },
         error: (err) => {
@@ -1466,6 +1623,46 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
       error: () => this.upsells = []
     });
   }
+
+  loadMessages(): void {
+    if (!this.quoteId) return;
+    this.isLoadingMessages = true;
+    this.quoteService.getMessages(this.quoteId).pipe(
+      catchError(() => of([])),
+      timeout(8000)
+    ).subscribe({
+      next: (msgs) => {
+        this.messages = msgs || [];
+        this.isLoadingMessages = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.isLoadingMessages = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  sendChatMessage(): void {
+    if (!this.quoteId || !this.newChatMessage.trim()) return;
+    const msg = this.newChatMessage.trim();
+    this.isSendingMessage = true;
+    this.quoteService.sendMessage(this.quoteId, msg).subscribe({
+      next: (savedMsg) => {
+        this.isSendingMessage = false;
+        this.newChatMessage = '';
+        this.messages.push(savedMsg);
+        this.showAlert('Response sent to customer!', 'success');
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.isSendingMessage = false;
+        this.showAlert('Failed to send response message: ' + (err.error?.message || err.message), 'error');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
 
   onCustomerSelected(): void {
     if (!this.selectedCustomerId) return;
@@ -1753,6 +1950,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
         error: (err) => {
           this.isSaving = false;
           this.showAlert(`Failed to save draft quotation: ${err.error?.message || err.message || 'Server error'}`, 'error');
+          this.cdr.detectChanges();
         }
       });
     } else {
@@ -1779,6 +1977,7 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
         error: (err) => {
           this.isSaving = false;
           this.showAlert(`Failed to update quotation draft: ${err.error?.message || err.message || 'Server error'}`, 'error');
+          this.cdr.detectChanges();
         }
       });
     }
@@ -1833,18 +2032,21 @@ export class QuoteBuilderComponent implements OnInit, OnDestroy {
             error: (submitErr) => {
               this.isSubmitting = false;
               this.showAlert(`Quotation was saved as #${created.id}, but approval submission failed: ${submitErr.error?.message || submitErr.message}`, 'error');
+              this.cdr.detectChanges();
             }
           });
         },
         error: (err) => {
           this.isSubmitting = false;
           this.showAlert(`Failed to create quotation: ${err.error?.message || err.message || 'Server error'}`, 'error');
+          this.cdr.detectChanges();
         }
       });
     } else {
       this.submitForApproval();
     }
   }
+
 
   submitForApproval(): void {
     if (!this.quote) return;

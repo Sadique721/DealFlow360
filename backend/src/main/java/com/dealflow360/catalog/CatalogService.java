@@ -1,6 +1,8 @@
 package com.dealflow360.catalog;
 
 import com.dealflow360.catalog.dto.*;
+import com.dealflow360.auth.User;
+import com.dealflow360.auth.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,7 @@ public class CatalogService {
     private final CustomerRepository customerRepository;
     private final CustomerTierRepository customerTierRepository;
     private final ApprovalChainRepository approvalChainRepository;
+    private final UserRepository userRepository;
 
     public CatalogService(CategoryRepository categoryRepository,
                           ProductRepository productRepository,
@@ -28,7 +31,8 @@ public class CatalogService {
                           PriceListRepository priceListRepository,
                           CustomerRepository customerRepository,
                           CustomerTierRepository customerTierRepository,
-                          ApprovalChainRepository approvalChainRepository) {
+                          ApprovalChainRepository approvalChainRepository,
+                          UserRepository userRepository) {
         this.categoryRepository = categoryRepository;
         this.productRepository = productRepository;
         this.productVariantRepository = productVariantRepository;
@@ -36,6 +40,7 @@ public class CatalogService {
         this.customerRepository = customerRepository;
         this.customerTierRepository = customerTierRepository;
         this.approvalChainRepository = approvalChainRepository;
+        this.userRepository = userRepository;
     }
 
     // ==========================================
@@ -292,18 +297,53 @@ public class CatalogService {
     // ==========================================
 
     public List<CustomerResponse> getAllCustomersDto() {
-        return customerRepository.findAll().stream()
+        return getAllCustomers().stream()
                 .map(this::mapToCustomerResponse)
                 .collect(Collectors.toList());
     }
 
     public List<Customer> getAllCustomers() {
-        return customerRepository.findAll();
+        List<Customer> customers = customerRepository.findAll();
+        List<User> customerUsers = userRepository.findByRole("CUSTOMER");
+        for (User u : customerUsers) {
+            boolean exists = customers.stream().anyMatch(c ->
+                    (c.getEmail() != null && c.getEmail().equalsIgnoreCase(u.getEmail())) ||
+                    (c.getPortalUserId() != null && c.getPortalUserId().equals(u.getId()))
+            );
+            if (!exists) {
+                Customer temp = Customer.builder()
+                        .id(u.getId())
+                        .name(u.getName())
+                        .email(u.getEmail())
+                        .tier(u.getTier() != null ? u.getTier() : "BRONZE")
+                        .phone(u.getPhone())
+                        .address(u.getAddress())
+                        .contactPerson(u.getContactPerson() != null ? u.getContactPerson() : u.getName())
+                        .portalUserId(u.getId())
+                        .createdAt(u.getCreatedAt() != null ? u.getCreatedAt() : LocalDateTime.now())
+                        .build();
+                customers.add(temp);
+            }
+        }
+        return customers;
     }
 
     public Customer getCustomerById(Long id) {
         return customerRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Customer not found: " + id));
+                .orElseGet(() -> userRepository.findById(id)
+                        .filter(u -> "CUSTOMER".equals(u.getRole()))
+                        .map(u -> Customer.builder()
+                                .id(u.getId())
+                                .name(u.getName())
+                                .email(u.getEmail())
+                                .tier(u.getTier() != null ? u.getTier() : "BRONZE")
+                                .phone(u.getPhone())
+                                .address(u.getAddress())
+                                .contactPerson(u.getContactPerson() != null ? u.getContactPerson() : u.getName())
+                                .portalUserId(u.getId())
+                                .createdAt(u.getCreatedAt() != null ? u.getCreatedAt() : LocalDateTime.now())
+                                .build())
+                        .orElseThrow(() -> new RuntimeException("Customer not found: " + id)));
     }
 
     public CustomerResponse getCustomerDtoById(Long id) {
@@ -322,7 +362,18 @@ public class CatalogService {
                 .portalUserId(request.getPortalUserId())
                 .createdAt(LocalDateTime.now())
                 .build();
-        return mapToCustomerResponse(customerRepository.save(customer));
+        Customer saved = customerRepository.save(customer);
+
+        // Sync commercial fields to User if user exists
+        userRepository.findByEmail(request.getEmail().trim()).ifPresent(u -> {
+            u.setTier(saved.getTier());
+            u.setPhone(saved.getPhone());
+            u.setAddress(saved.getAddress());
+            u.setContactPerson(saved.getContactPerson());
+            userRepository.save(u);
+        });
+
+        return mapToCustomerResponse(saved);
     }
 
     public CustomerResponse updateCustomer(Long id, CustomerRequest request) {
@@ -337,7 +388,18 @@ public class CatalogService {
         if (request.getPortalUserId() != null) {
             customer.setPortalUserId(request.getPortalUserId());
         }
-        return mapToCustomerResponse(customerRepository.save(customer));
+        Customer saved = customerRepository.save(customer);
+
+        // Sync commercial fields to User if user exists
+        userRepository.findByEmail(request.getEmail().trim()).ifPresent(u -> {
+            u.setTier(saved.getTier());
+            u.setPhone(saved.getPhone());
+            u.setAddress(saved.getAddress());
+            u.setContactPerson(saved.getContactPerson());
+            userRepository.save(u);
+        });
+
+        return mapToCustomerResponse(saved);
     }
 
     public void deleteCustomer(Long id) {

@@ -72,4 +72,13 @@ export class QuotationService {
       comments
     });
   }
+
+  getMessages(id: number): Observable<any[]> {
+    return this.api.get<any[]>(`quotations/${id}/messages`);
+  }
+
+  sendMessage(id: number, message: string): Observable<any> {
+    return this.api.post<any>(`quotations/${id}/messages`, { message });
+  }
 }
+

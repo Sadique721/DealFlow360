@@ -325,7 +325,29 @@ public class QuotationService {
         }
 
         Customer customer = customerRepository.findById(request.getCustomerId())
-                .orElseThrow(() -> new RuntimeException("Customer not found: " + request.getCustomerId()));
+                .orElseGet(() -> {
+                    return userRepository.findById(request.getCustomerId())
+                            .filter(u -> "CUSTOMER".equals(u.getRole()))
+                            .map(u -> {
+                                Optional<Customer> existing = customerRepository.findByPortalUserId(u.getId());
+                                if (existing.isPresent()) return existing.get();
+                                Optional<Customer> byEmail = customerRepository.findByEmail(u.getEmail());
+                                if (byEmail.isPresent()) return byEmail.get();
+
+                                Customer newCust = Customer.builder()
+                                        .name(u.getName())
+                                        .email(u.getEmail())
+                                        .tier(u.getTier() != null ? u.getTier() : "BRONZE")
+                                        .phone(u.getPhone())
+                                        .address(u.getAddress())
+                                        .contactPerson(u.getContactPerson() != null ? u.getContactPerson() : u.getName())
+                                        .portalUserId(u.getId())
+                                        .createdAt(u.getCreatedAt() != null ? u.getCreatedAt() : LocalDateTime.now())
+                                        .build();
+                                return customerRepository.save(newCust);
+                            })
+                            .orElseThrow(() -> new RuntimeException("Customer not found: " + request.getCustomerId()));
+                });
 
         User salesRep = null;
         if (request.getSalesRepId() != null) {
@@ -582,7 +604,8 @@ public class QuotationService {
         quotation.setTotalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
         quotation.setTotalCost(totalCost.setScale(2, RoundingMode.HALF_UP));
         quotation.setTotalMarginAmount(totalMarginAmount.setScale(2, RoundingMode.HALF_UP));
-        quotation.setMarginPercentage(marginPercentage);
+        quotation.setMarginPercentage(clampMarginPercentage(marginPercentage));
+
 
         // Run Algorithmic Engine 6.1: Risk Score Engine
         BigDecimal customerTierCeiling = BigDecimal.valueOf(5.00); // Default Bronze
@@ -824,4 +847,14 @@ public class QuotationService {
     public List<QuotationVersion> getQuotationVersions(Long quotationId) {
         return quotationVersionRepository.findByQuotationIdOrderByVersionNumberAsc(quotationId);
     }
+
+    private BigDecimal clampMarginPercentage(BigDecimal marginPct) {
+        if (marginPct == null) return BigDecimal.ZERO;
+        BigDecimal min = BigDecimal.valueOf(-999.99);
+        BigDecimal max = BigDecimal.valueOf(999.99);
+        if (marginPct.compareTo(min) < 0) return min;
+        if (marginPct.compareTo(max) > 0) return max;
+        return marginPct;
+    }
 }
+

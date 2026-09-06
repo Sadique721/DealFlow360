@@ -261,7 +261,8 @@ public class ApprovalService {
                 "action", action,
                 "approver", approver.getName(),
                 "requestStatus", approvalRequest.getStatus(),
-                "quotationStatus", quotation.getStatus()
+                "quotationStatus", quotation.getStatus(),
+                "currentStage", approvalRequest.getCurrentStage() != null ? approvalRequest.getCurrentStage() : ""
         ));
 
         return approvalRequest;
