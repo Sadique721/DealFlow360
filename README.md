@@ -482,6 +482,16 @@ npm start
 
 ---
 
+## 🎬 5-Minute High-Impact Live Demo Script
+
+1. **Minute 0:00 - 1:00:** Rep logs in, builds quote for Gold customer with hardware & services. Observes live margin meter.
+2. **Minute 1:00 - 1:45:** Rep clicks smart upsell recommendation. Instant margin boost.
+3. **Minute 1:45 - 2:30:** Rep applies aggressive discount on services. Blended risk engine triggers 2-stage approval (Manager + Finance). Manager approves with audit trail.
+4. **Minute 2:30 - 3:45:** Open Customer Portal in separate window. Customer counters discount. System automatically re-evaluates risk and locks quote for approval.
+5. **Minute 3:45 - 5:00:** Terms confirmed. Fulfillment auto-splits between Main Warehouse and East Depot. Split billing generated (hardware invoice + quarterly subscription schedule). Deal health dashboard displays green health score.
+
+---
+
 ## 🏆 GitHub Trophies
 
 <p align="center">
