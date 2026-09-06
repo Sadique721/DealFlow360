@@ -46,6 +46,15 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.generateInvoice(quotationId, invoiceType, amount));
     }
 
+    @PostMapping("/quotation/ref/{quoteRef}/generate")
+    @Operation(summary = "Issue a new commercial invoice by Quote Number reference (e.g. Q-2026-0042 or 42)")
+    public ResponseEntity<Invoice> generateInvoiceByRef(
+            @PathVariable String quoteRef,
+            @RequestParam(defaultValue = "ONE_TIME") String invoiceType,
+            @RequestParam(required = false) BigDecimal amount) {
+        return ResponseEntity.ok(invoiceService.generateInvoiceByRef(quoteRef, invoiceType, amount));
+    }
+
     @PostMapping("/{id}/pay")
     @Operation(summary = "Record customer payment against an outstanding invoice")
     public ResponseEntity<Invoice> recordPayment(@PathVariable Long id) {

@@ -353,25 +353,28 @@ public class CatalogService {
         if (req.getName() == null || req.getName().trim().isEmpty()) {
             throw new IllegalArgumentException("Customer name is required.");
         }
-        if (req.getTier() == null || req.getTier().trim().isEmpty()) {
-            throw new IllegalArgumentException("Customer tier is required (e.g. BRONZE, SILVER, GOLD).");
-        }
         if (req.getEmail() == null || req.getEmail().trim().isEmpty()) {
             throw new IllegalArgumentException("Customer email is required.");
+        }
+        if (req.getTier() == null || req.getTier().trim().isEmpty()) {
+            throw new IllegalArgumentException("Customer tier is required (e.g. BRONZE, SILVER, GOLD).");
         }
     }
 
     private CustomerResponse mapToCustomerResponse(Customer c) {
+        if (c == null) return null;
         BigDecimal maxDisc = BigDecimal.valueOf(5.00);
-        if (c.getTier() != null) {
-            maxDisc = customerTierRepository.findByTierNameIgnoreCase(c.getTier())
-                    .map(CustomerTier::getMaxDiscountPercent)
-                    .orElse(BigDecimal.valueOf(5.00));
-        }
+        try {
+            if (c.getTier() != null && customerTierRepository != null) {
+                maxDisc = customerTierRepository.findByTierNameIgnoreCase(c.getTier())
+                        .map(CustomerTier::getMaxDiscountPercent)
+                        .orElse(BigDecimal.valueOf(5.00));
+            }
+        } catch (Exception ignored) {}
         return CustomerResponse.builder()
                 .id(c.getId())
                 .name(c.getName())
-                .tier(c.getTier())
+                .tier(c.getTier() != null ? c.getTier() : "BRONZE")
                 .tierMaxDiscount(maxDisc)
                 .email(c.getEmail())
                 .contactPerson(c.getContactPerson())

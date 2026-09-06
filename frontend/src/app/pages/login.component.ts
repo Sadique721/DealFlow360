@@ -27,6 +27,10 @@ type TabMode = 'login' | 'signup';
           </p>
         </div>
 
+        <div class="hero-image-wrapper">
+          <img src="/login-hero.jpg" alt="DealFlow360 Platform Overview" class="hero-3d-banner" />
+        </div>
+
         <div class="security-highlights">
           <div class="highlight-item">
             <div class="highlight-icon">🔒</div>
@@ -242,6 +246,27 @@ type TabMode = 'login' | 'signup';
       flex-direction: column;
       justify-content: center;
       gap: 36px;
+    }
+
+    .hero-image-wrapper {
+      width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.1), 0 8px 16px -6px rgba(15, 23, 42, 0.05);
+      border: 1px solid #e2e8f0;
+      background: #f8fafc;
+    }
+
+    .hero-3d-banner {
+      width: 100%;
+      height: auto;
+      display: block;
+      object-fit: cover;
+      transition: transform 0.3s ease;
+    }
+
+    .hero-image-wrapper:hover .hero-3d-banner {
+      transform: scale(1.02);
     }
 
     .login-brand {

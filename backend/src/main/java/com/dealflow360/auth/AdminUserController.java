@@ -42,11 +42,16 @@ public class AdminUserController {
     private static final SecureRandom RNG = new SecureRandom();
 
     private final UserRepository userRepository;
+    private final com.dealflow360.catalog.CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
-    public AdminUserController(UserRepository userRepository, PasswordEncoder passwordEncoder, EmailService emailService) {
+    public AdminUserController(UserRepository userRepository,
+                               com.dealflow360.catalog.CustomerRepository customerRepository,
+                               PasswordEncoder passwordEncoder,
+                               EmailService emailService) {
         this.userRepository = userRepository;
+        this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
     }
@@ -125,6 +130,19 @@ public class AdminUserController {
                 .build();
 
         User saved = userRepository.save(user);
+
+        // If role is CUSTOMER, auto-provision Customer record in catalog
+        if ("CUSTOMER".equals(saved.getRole()) && customerRepository.findByEmail(saved.getEmail()).isEmpty()) {
+            com.dealflow360.catalog.Customer customer = com.dealflow360.catalog.Customer.builder()
+                    .name(saved.getName())
+                    .email(saved.getEmail())
+                    .contactPerson(saved.getName())
+                    .tier("BRONZE")
+                    .portalUserId(saved.getId())
+                    .createdAt(java.time.LocalDateTime.now())
+                    .build();
+            customerRepository.save(customer);
+        }
 
         String creator = authUser != null ? authUser.getUser().getName() : "Admin";
         log.info("[AdminUserController] New {} user created by {}: {} <{}>  TempPw: {}",

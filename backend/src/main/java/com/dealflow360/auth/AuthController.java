@@ -25,17 +25,23 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
+    private final com.dealflow360.catalog.CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
+    private final com.dealflow360.mail.EmailService emailService;
 
     public AuthController(AuthenticationManager authenticationManager,
                           UserRepository userRepository,
+                          com.dealflow360.catalog.CustomerRepository customerRepository,
                           PasswordEncoder passwordEncoder,
-                          JwtTokenProvider tokenProvider) {
+                          JwtTokenProvider tokenProvider,
+                          com.dealflow360.mail.EmailService emailService) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
+        this.customerRepository = customerRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
+        this.emailService = emailService;
     }
 
     @PostMapping("/login")
@@ -70,7 +76,7 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    @Operation(summary = "Customer self-registration — always creates a CUSTOMER role account")
+    @Operation(summary = "Customer self-registration — creates a CUSTOMER role account, Customer record, and dispatches welcome email")
     public ResponseEntity<?> signup(@Valid @RequestBody SignupRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Email is already in use"));
@@ -83,12 +89,29 @@ public class AuthController {
                 .team(request.getTeam() != null ? request.getTeam() : "External")
                 .active(true)
                 .build();
-        userRepository.save(user);
-        String token = tokenProvider.generateToken(user);
+        User savedUser = userRepository.save(user);
+
+        // Auto-provision corresponding Customer record in customers table if not exists
+        if (customerRepository.findByEmail(request.getEmail()).isEmpty()) {
+            com.dealflow360.catalog.Customer customer = com.dealflow360.catalog.Customer.builder()
+                    .name(request.getName())
+                    .email(request.getEmail())
+                    .contactPerson(request.getName())
+                    .tier("BRONZE")
+                    .portalUserId(savedUser.getId())
+                    .createdAt(java.time.LocalDateTime.now())
+                    .build();
+            customerRepository.save(customer);
+        }
+
+        // Send Ultra Pro Max Welcome Email with credentials
+        emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName(), request.getPassword(), savedUser.getRole(), savedUser.getTeam());
+
+        String token = tokenProvider.generateToken(savedUser);
         return ResponseEntity.ok(LoginResponse.builder()
                 .token(token).type("Bearer")
-                .id(user.getId()).name(user.getName())
-                .email(user.getEmail()).role(user.getRole()).team(user.getTeam())
+                .id(savedUser.getId()).name(savedUser.getName())
+                .email(savedUser.getEmail()).role(savedUser.getRole()).team(savedUser.getTeam())
                 .build());
     }
 

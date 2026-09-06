@@ -299,6 +299,52 @@ export interface InvoiceItem {
           </div>
         </div>
       </div>
+
+      <!-- ISSUE COMMERCIAL INVOICE MODAL -->
+      <div class="pdf-modal-backdrop" *ngIf="showCreateInvoiceModal" (click)="closeCreateModal()">
+        <div class="card" style="width:100%; max-width:540px; background:#fff; border-radius:12px; padding:24px; box-shadow: 0 20px 40px rgba(0,0,0,0.25);" (click)="$event.stopPropagation()">
+          <div class="flex justify-between items-center mb-4" style="border-bottom:1px solid #e2e8f0; padding-bottom:12px;">
+            <div>
+              <h2 class="text-lg font-bold text-primary" style="margin:0;">Issue Commercial Invoice</h2>
+              <p class="text-xs text-muted" style="margin:4px 0 0 0;">Select a confirmed quotation to generate a commercial invoice</p>
+            </div>
+            <button class="btn-close" (click)="closeCreateModal()">✕</button>
+          </div>
+
+          <div *ngIf="invoiceError" class="alert-error mb-4" style="background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; padding:10px 14px; border-radius:6px; font-size:13px;">
+            ⚠️ {{ invoiceError }}
+          </div>
+
+          <div class="form-group mb-3">
+            <label class="form-label font-semibold text-sm">Select Quotation</label>
+            <select class="form-control" [(ngModel)]="selectedQuoteRef" (ngModelChange)="onQuoteSelected()">
+              <option value="">-- Choose Approved/Confirmed Quotation --</option>
+              <option *ngFor="let q of availableQuotes" [value]="q.quoteNumber || q.id">
+                {{ q.quoteNumber }} — {{ q.customerName || q.customer?.name || 'Client' }} (\${{ q.totalAmount }}) [{{ q.status }}]
+              </option>
+            </select>
+            <div class="text-xs text-muted mt-1">Or enter manual Quote Number:</div>
+            <input type="text" class="form-control mt-1" [(ngModel)]="selectedQuoteRef" placeholder="e.g. Q-2026-0042 or 6"/>
+          </div>
+
+          <div class="form-group mb-3">
+            <label class="form-label font-semibold text-sm">Invoice Billing Type</label>
+            <select class="form-control" [(ngModel)]="invoiceType">
+              <option value="ONE_TIME">ONE_TIME (Upfront / Non-Recurring Items)</option>
+              <option value="RECURRING">RECURRING (Subscription Milestone Billing)</option>
+              <option value="FULL">FULL (Entire Quotation Total)</option>
+            </select>
+          </div>
+
+          <div class="flex justify-end gap-2 mt-5" style="border-top:1px solid #e2e8f0; padding-top:16px;">
+            <button type="button" class="btn btn-secondary" (click)="closeCreateModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" (click)="submitCreateInvoice()" [disabled]="invoiceSubmitting">
+              {{ invoiceSubmitting ? 'Generating Invoice...' : 'Generate Invoice' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
     </div>
   `,
   styles: [`
@@ -756,22 +802,71 @@ export class InvoicesComponent implements OnInit {
     });
   }
 
+  showCreateInvoiceModal = false;
+  availableQuotes: any[] = [];
+  selectedQuoteRef = '';
+  invoiceType = 'ONE_TIME';
+  invoiceSubmitting = false;
+  invoiceError = '';
+
   promptNewInvoice(): void {
-    const qInput = prompt('Enter Quotation ID or Quote Number to issue invoice for (e.g. 6 or Q-1045):');
-    if (!qInput) return;
-    const cleanId = parseInt(qInput.replace(/\D/g, ''), 10);
-    if (!cleanId || isNaN(cleanId)) {
-      alert('Please enter a valid numeric Quotation ID.');
+    this.showCreateInvoiceModal = true;
+    this.invoiceError = '';
+    this.selectedQuoteRef = '';
+    this.loadAvailableQuotations();
+    this.cdr.detectChanges();
+  }
+
+  loadAvailableQuotations(): void {
+    this.apiService.get<any[]>('quotations').subscribe({
+      next: (quotes) => {
+        if (quotes && quotes.length > 0) {
+          this.availableQuotes = quotes;
+        } else {
+          this.availableQuotes = [];
+        }
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.availableQuotes = [];
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  closeCreateModal(): void {
+    this.showCreateInvoiceModal = false;
+    this.invoiceError = '';
+    this.cdr.detectChanges();
+  }
+
+  onQuoteSelected(): void {
+    if (this.invoiceError) this.invoiceError = '';
+  }
+
+  submitCreateInvoice(): void {
+    if (!this.selectedQuoteRef || !this.selectedQuoteRef.trim()) {
+      this.invoiceError = 'Please select or enter a Quotation Number or ID.';
       return;
     }
 
-    this.apiService.post<any>(`invoices/quotation/${cleanId}/generate`, {}).subscribe({
+    this.invoiceSubmitting = true;
+    this.invoiceError = '';
+
+    const cleanRef = this.selectedQuoteRef.trim();
+
+    this.apiService.post<any>(`invoices/quotation/ref/${encodeURIComponent(cleanRef)}/generate?invoiceType=${this.invoiceType}`, {}).subscribe({
       next: (newInv) => {
-        alert(`Invoice ${newInv.invoiceNumber || 'INV-NEW'} successfully generated for quotation!`);
+        this.invoiceSubmitting = false;
+        this.showCreateInvoiceModal = false;
+        alert(`Invoice ${newInv.invoiceNumber || 'INV-NEW'} successfully generated for quotation ${cleanRef}!`);
         this.loadInvoices();
+        this.cdr.detectChanges();
       },
       error: (err) => {
-        alert(`Failed to generate invoice: ${err?.error?.message || err?.message || 'Quotation not found or not confirmed'}`);
+        this.invoiceSubmitting = false;
+        this.invoiceError = err?.error?.message || err?.message || 'Quotation not found or invoice generation failed.';
+        this.cdr.detectChanges();
       }
     });
   }
