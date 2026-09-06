@@ -159,7 +159,7 @@ export class AuthService {
           email: email.trim().toLowerCase(),
           password,
           team: company.trim()
-        }).pipe(timeout(8000))
+        }).pipe(timeout(15000))
       );
 
       if (resp && resp.token) {
